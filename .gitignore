@@ -3,6 +3,10 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Local configuration and virtual environments
+.env
+.venv/
+
 # C extensions
 *.so
 
@@ -15,6 +19,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+# The Python template rule above would otherwise hide the Next.js helpers.
+!frontend/lib/
 lib64/
 parts/
 sdist/

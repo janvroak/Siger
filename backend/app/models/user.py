@@ -1,12 +1,16 @@
 import enum
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Enum, String, func
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.course import Course, Enrollment
 
 
 class UserRole(enum.StrEnum):
@@ -45,3 +49,5 @@ class User(Base):
         onupdate=func.now(),
         nullable=False,
     )
+    courses: Mapped[list["Course"]] = relationship(back_populates="professor")
+    enrollments: Mapped[list["Enrollment"]] = relationship(back_populates="student")

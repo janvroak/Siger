@@ -9,11 +9,18 @@ dependencies = [
     "email-validator>=2.2.0",
     "fastapi[standard]>=0.115.0",
     "pydantic-settings>=2.7.0",
+    "pwdlib[argon2]>=0.3.0",
+    "pyjwt>=2.10.0",
     "sqlalchemy[asyncio]>=2.0.36",
+    "langgraph>=1.2.14",
+    "qdrant-client>=1.19.1",
+    "openai>=3.26.0",
+    "pypdf>=6.19.0",
 ]
 
 [dependency-groups]
 dev = [
+    "pytest>=9.1.1",
     "ruff>=0.8.0",
 ]
 
@@ -23,3 +30,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
