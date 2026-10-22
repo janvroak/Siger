@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { deadlineLabel } from "@/components/AssignmentList";
+import { GradeView } from "@/components/GradeView";
 import { plural } from "@/components/CourseCard";
 import { primaryButton } from "@/components/Modal";
 import { OpenPdfButton } from "@/components/OpenPdfButton";
@@ -107,11 +108,14 @@ export function SubmissionPanel({
             </div>
             <OpenPdfButton load={() => getMySubmissionPdf(token, courseId, assignmentId)} />
           </div>
-          <p className="mt-3 text-sm text-slate-500">
-            {submission.status === "published"
-              ? "Your grade and feedback are ready."
-              : "Your answers are graded by the AI and then checked by your professor. Your grade appears here once it is published."}
-          </p>
+          {submission.status === "published" ? (
+            <GradeView token={token} courseId={courseId} assignmentId={assignmentId} />
+          ) : (
+            <p className="mt-3 text-sm text-slate-500">
+              Your answers are graded by the AI and then checked by your professor. Your grade
+              appears here once it is published.
+            </p>
+          )}
         </>
       ) : null}
 

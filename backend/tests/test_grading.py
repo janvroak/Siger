@@ -4,91 +4,12 @@ The LLM, embeddings and Qdrant are faked; the graph, services, routes and
 database are real.
 """
 
-from pathlib import Path
-
 import pytest
 
-from app.agents.evaluation import nodes
-from app.api.routes import submissions as submission_routes
-from app.rag.llm import LLMRateLimitError
 from app.services import grading
-from tests.api_world import create_assignment
+from tests.api_world import submit_and_grade as submit
 
 pytestmark = pytest.mark.anyio
-
-ANSWERS_PDF = (
-    Path(__file__).resolve().parents[1] / "demo_data" / "db201_course_notes.pdf"
-).read_bytes()
-
-
-class FakeGrader:
-    def __init__(self) -> None:
-        self.fail_scoring = False
-
-    async def chat_json(self, system: str, user: str) -> dict:
-        if system.startswith("You split"):
-            return {
-                "answers": [
-                    {"question": 1, "answer": "Normalization reduces redundancy."},
-                    {"question": 2, "answer": ""},
-                ]
-            }
-        if system.startswith("You are a fair"):
-            if self.fail_scoring:
-                raise LLMRateLimitError("quota", None)
-            return {
-                "covered": ["reduces redundancy"],
-                "missing": ["update anomalies"],
-                "incorrect": [],
-                "marks": 3,
-                "rationale": "Mentions redundancy but not anomalies.",
-            }
-        if system.startswith("You write personalised"):
-            return {
-                "feedback": [
-                    {
-                        "question": 1,
-                        "text": "Also cover anomalies.",
-                        "cited_excerpts": [],
-                    }
-                ]
-            }
-        raise AssertionError(system[:30])
-
-    async def embed(self, texts):
-        return [[1.0, 0.1] for _ in texts]
-
-
-@pytest.fixture
-def grader(world, monkeypatch):
-    fake = FakeGrader()
-    monkeypatch.setattr(submission_routes, "grade_submission", grading.grade_submission)
-    monkeypatch.setattr(grading, "session_factory", world.sessions)
-    monkeypatch.setattr(nodes.llm, "chat_json", fake.chat_json)
-    monkeypatch.setattr(nodes.llm, "embed", fake.embed)
-
-    async def key_vectors(ids):
-        return {i: [1.0, 0.0] for i in ids}
-
-    async def no_slides(**_):
-        return []
-
-    monkeypatch.setattr(nodes.vector_store, "get_answer_key_vectors", key_vectors)
-    monkeypatch.setattr(nodes.vector_store, "search", no_slides)
-    return fake
-
-
-async def submit(world) -> tuple[str, str]:
-    assignment = await create_assignment(world)
-    url = f"{world.base}/{assignment['id']}"
-    async with world.client(world.student) as client:
-        # The ASGI test transport runs background tasks before returning.
-        response = await client.post(
-            f"{url}/submission",
-            files={"file": ("answers.pdf", ANSWERS_PDF, "application/pdf")},
-        )
-    assert response.status_code == 201, response.text
-    return url, response.json()["id"]
 
 
 async def test_upload_is_graded_in_the_background(world, grader) -> None:

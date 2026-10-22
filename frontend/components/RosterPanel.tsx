@@ -66,6 +66,7 @@ export function RosterPanel({
                 <th className="py-2 pr-4 font-medium">Student</th>
                 <th className="py-2 pr-4 font-medium">Status</th>
                 <th className="py-2 pr-4 font-medium">Submitted</th>
+                <th className="py-2 pr-4 font-medium">Marks</th>
                 <th className="py-2 font-medium" />
               </tr>
             </thead>
@@ -84,6 +85,20 @@ export function RosterPanel({
                   </td>
                   <td className="py-3 pr-4 text-slate-500">
                     {row.submission ? new Date(row.submission.submitted_at).toLocaleString() : "—"}
+                  </td>
+                  <td className="py-3 pr-4 tabular-nums">
+                    {row.final_marks !== null ? (
+                      <span className="font-medium">
+                        {row.final_marks}
+                        <span className="font-normal text-slate-500"> / {roster.total_marks}</span>
+                      </span>
+                    ) : row.ai_marks !== null ? (
+                      <span className="text-slate-500">
+                        AI {row.ai_marks} / {roster.total_marks}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="py-3 text-right">
                     {row.submission ? (

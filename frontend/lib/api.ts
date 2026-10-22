@@ -109,6 +109,8 @@ export type AssignmentSummary = {
   submission_count: number | null;
   /** The requesting student's submission status; null if not submitted. */
   my_status: SubmissionStatus | null;
+  /** The student's published total, once faculty publish the grade. */
+  my_score: number | null;
 };
 
 export type SubmissionStatus =
@@ -138,6 +140,8 @@ export type RosterRow = {
   state: RosterState;
   submission: Submission | null;
   error: string | null;
+  ai_marks: number | null;
+  final_marks: number | null;
 };
 
 export type SubmissionRoster = {
@@ -147,6 +151,7 @@ export type SubmissionRoster = {
   submitted: number;
   pending: number;
   overdue: number;
+  total_marks: number;
   students: RosterRow[];
 };
 
@@ -223,11 +228,47 @@ export type SubmissionResults = {
   student_email: string;
   error: string | null;
   graded_at: string | null;
+  published_at: string | null;
+  review_log: ReviewLogEntry[];
   grading_trace: TraceStep[];
   total_ai_marks: number;
   total_marks: number;
   flagged_count: number;
   questions: QuestionResult[];
+};
+
+export type ReviewLogEntry = {
+  action: "approve" | "override" | "publish";
+  question_position: number | null;
+  ai_marks: number | null;
+  final_marks: number | null;
+  faculty_name: string;
+  created_at: string;
+};
+
+export type ReviewInput = {
+  questions: { question_id: string; final_marks: number; feedback: string }[];
+  publish: boolean;
+};
+
+export type StudentQuestionResult = {
+  position: number;
+  text: string;
+  topic: string;
+  max_marks: number;
+  marks: number;
+  key_points_hit: string[];
+  key_points_missed: string[];
+  feedback: string;
+  feedback_sources: { filename: string; page: number }[];
+};
+
+export type StudentResult = {
+  submission: Submission;
+  published_at: string;
+  total_marks: number;
+  max_marks: number;
+  questions: StudentQuestionResult[];
 };
 
 export class ApiError extends Error {
@@ -539,5 +580,35 @@ export function regradeSubmission(
   return request<Submission>(
     `/courses/${courseId}/assignments/${assignmentId}/submissions/${submissionId}/grade`,
     { method: "POST", headers: authHeaders(token) },
+  );
+}
+
+/** Approve or override AI marks and feedback; publish to show the student. */
+export function reviewSubmission(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+  submissionId: string,
+  input: ReviewInput,
+): Promise<SubmissionResults> {
+  return request<SubmissionResults>(
+    `/courses/${courseId}/assignments/${assignmentId}/submissions/${submissionId}/review`,
+    {
+      method: "PUT",
+      headers: { ...authHeaders(token), "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** The student's own published grade (404 until faculty publish it). */
+export function getMyResult(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+): Promise<StudentResult> {
+  return request<StudentResult>(
+    `/courses/${courseId}/assignments/${assignmentId}/submission/result`,
+    { headers: authHeaders(token) },
   );
 }

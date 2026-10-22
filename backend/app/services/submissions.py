@@ -1,18 +1,20 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.assignment import Assignment, Question
 from app.models.course import Enrollment
 from app.models.question_score import QuestionScore
-from app.models.submission import Submission
+from app.models.review_log import ReviewLog
+from app.models.submission import Submission, SubmissionStatus
 from app.models.user import User
 from app.rag.pdf import extract_pdf
 from app.schemas.submission import (
     QuestionResult,
+    ReviewLogRead,
     RosterRow,
     SubmissionRead,
     SubmissionResults,
@@ -125,8 +127,12 @@ async def roster(session: AsyncSession, assignment: Assignment) -> SubmissionRos
         .order_by(User.full_name)
     )
     closed = is_closed(assignment)
+    rows = list(await session.execute(statement))
+    totals = await _totals(
+        session, [submission.id for _, submission in rows if submission]
+    )
     students: list[RosterRow] = []
-    for student, submission in await session.execute(statement):
+    for student, submission in rows:
         if submission is None:
             state = "overdue" if closed else "not_submitted"
         else:
@@ -141,6 +147,14 @@ async def roster(session: AsyncSession, assignment: Assignment) -> SubmissionRos
                     SubmissionRead.model_validate(submission) if submission else None
                 ),
                 error=submission.error if submission else None,
+                ai_marks=totals.get(submission.id, (None, None))[0]
+                if submission
+                else None,
+                final_marks=(
+                    totals.get(submission.id, (None, None))[1]
+                    if submission and submission.status == SubmissionStatus.PUBLISHED
+                    else None
+                ),
             )
         )
 
@@ -153,6 +167,14 @@ async def roster(session: AsyncSession, assignment: Assignment) -> SubmissionRos
         submitted=submitted,
         pending=len(students) - submitted - overdue,
         overdue=overdue,
+        total_marks=float(
+            await session.scalar(
+                select(func.coalesce(func.sum(Question.max_marks), 0.0)).where(
+                    Question.assignment_id == assignment.id
+                )
+            )
+            or 0.0
+        ),
         students=students,
     )
 
@@ -205,6 +227,8 @@ async def results(session: AsyncSession, submission: Submission) -> SubmissionRe
         student_email=student.email,
         error=submission.error,
         graded_at=submission.graded_at,
+        published_at=submission.published_at,
+        review_log=await _review_log(session, submission.id),
         grading_trace=[
             TraceStepRead(**step) for step in submission.grading_trace or []
         ],
@@ -213,3 +237,47 @@ async def results(session: AsyncSession, submission: Submission) -> SubmissionRe
         flagged_count=sum(1 for question in questions if question.flagged),
         questions=questions,
     )
+
+
+async def _review_log(
+    session: AsyncSession, submission_id: uuid.UUID
+) -> list[ReviewLogRead]:
+    rows = await session.execute(
+        select(ReviewLog, User.full_name, Question.position)
+        .join(User, User.id == ReviewLog.faculty_id)
+        .outerjoin(Question, Question.id == ReviewLog.question_id)
+        .where(ReviewLog.submission_id == submission_id)
+        .order_by(ReviewLog.created_at, Question.position)
+    )
+    return [
+        ReviewLogRead(
+            action=entry.action,
+            question_position=position,
+            ai_marks=entry.ai_marks,
+            final_marks=entry.final_marks,
+            faculty_name=name,
+            created_at=entry.created_at,
+        )
+        for entry, name, position in rows
+    ]
+
+
+async def _totals(
+    session: AsyncSession, submission_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, tuple[float, float | None]]:
+    """Total AI and final marks per graded submission."""
+    if not submission_ids:
+        return {}
+    rows = await session.execute(
+        select(
+            QuestionScore.submission_id,
+            func.sum(QuestionScore.ai_marks),
+            func.sum(QuestionScore.final_marks),
+        )
+        .where(QuestionScore.submission_id.in_(submission_ids))
+        .group_by(QuestionScore.submission_id)
+    )
+    return {
+        submission_id: (float(ai), float(final) if final is not None else None)
+        for submission_id, ai, final in rows
+    }

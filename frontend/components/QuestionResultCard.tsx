@@ -5,9 +5,12 @@ import type { QuestionResult } from "@/lib/api";
 /** One question's AI evaluation, with everything that explains the marks. */
 export function QuestionResultCard({
   result,
+  feedbackEditable = false,
   children,
 }: {
   result: QuestionResult;
+  /** The feedback text is edited below the card, so only its sources show here. */
+  feedbackEditable?: boolean;
   /** Extra controls under the card (e.g. faculty override). */
   children?: ReactNode;
 }) {
@@ -74,11 +77,14 @@ export function QuestionResultCard({
 
       <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/50 p-4 text-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
-          Feedback for the student
+          {feedbackEditable ? "Lecture material the feedback points to" : "Feedback for the student"}
         </p>
-        <p className="mt-1 text-slate-800">{result.feedback}</p>
+        {feedbackEditable ? null : <p className="mt-1 text-slate-800">{result.feedback}</p>}
+        {feedbackEditable && result.feedback_sources.length === 0 ? (
+          <p className="mt-1 text-slate-500">No slides cited.</p>
+        ) : null}
         {result.feedback_sources.length > 0 ? (
-          <p className="mt-2 text-xs text-slate-500">
+          <p className={`text-xs text-slate-500 ${feedbackEditable ? "mt-1" : "mt-2"}`}>
             Points to:{" "}
             {result.feedback_sources
               .map((source) => `${source.filename}, p. ${source.page}`)

@@ -25,12 +25,15 @@ from app.models.user import User
 from app.rag.pdf import InvalidPDFError
 from app.schemas.submission import (
     MySubmission,
+    ReviewIn,
+    StudentResult,
     SubmissionRead,
     SubmissionResults,
     SubmissionRoster,
 )
 from app.services import storage
 from app.services.grading import GRADABLE, grade_submission
+from app.services.review import REVIEWABLE, ReviewError, review, student_result
 from app.services.submissions import (
     AlreadySubmittedError,
     SubmissionClosedError,
@@ -144,6 +147,30 @@ async def read_my_submission_file(
 
 
 @router.get(
+    f"{ASSIGNMENT}/submission/result",
+    response_model=StudentResult,
+    summary="Your published grade and feedback",
+)
+async def read_my_result(
+    course_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    student: Annotated[User, Depends(get_current_student)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> StudentResult:
+    course = await course_for_member(session, course_id, student)
+    assignment = await get_course_assignment(session, course.id, assignment_id)
+    submission = await get_student_submission(session, assignment.id, student.id)
+    result = await student_result(session, submission) if submission else None
+    if result is None:
+        # Grades exist only once faculty have reviewed and published them.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Your grade has not been published yet",
+        )
+    return result
+
+
+@router.get(
     f"{ASSIGNMENT}/submissions",
     response_model=SubmissionRoster,
     summary="Every enrolled student's submission status (course professor only)",
@@ -192,6 +219,36 @@ async def read_submission_results(
     submission = await _professor_submission(
         session, course_id, assignment_id, submission_id, professor
     )
+    return await results(session, submission)
+
+
+@router.put(
+    f"{ASSIGNMENT}/submissions/{{submission_id}}/review",
+    response_model=SubmissionResults,
+    summary="Approve or override AI marks, edit feedback, and publish",
+)
+async def review_submission(
+    course_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    submission_id: uuid.UUID,
+    data: ReviewIn,
+    professor: Annotated[User, Depends(get_current_professor)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SubmissionResults:
+    submission = await _professor_submission(
+        session, course_id, assignment_id, submission_id, professor
+    )
+    # Read before a possible rollback, which expires the loaded submission.
+    code = (
+        status.HTTP_422_UNPROCESSABLE_CONTENT
+        if submission.status in REVIEWABLE
+        else status.HTTP_409_CONFLICT
+    )
+    try:
+        await review(session, submission, professor, data)
+    except ReviewError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=code, detail=str(exc)) from None
     return await results(session, submission)
 
 

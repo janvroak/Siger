@@ -12,4 +12,4 @@ def anyio_backend() -> str:
 
 
 # Imported after the environment is set up, since importing the app reads settings.
-from tests.api_world import world  # noqa: E402, F401  (shared API fixture)
+from tests.api_world import grader, world  # noqa: E402, F401  (shared fixtures)

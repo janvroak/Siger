@@ -86,6 +86,12 @@ export function AssignmentList({
                 {assignment.submission_count !== null
                   ? ` · ${plural(assignment.submission_count, "submission")}`
                   : null}
+                {assignment.my_score !== null ? (
+                  <span className="font-medium text-emerald-700">
+                    {" "}
+                    · scored {assignment.my_score} / {assignment.total_marks}
+                  </span>
+                ) : null}
               </p>
             </div>
             <span className="text-slate-400">→</span>

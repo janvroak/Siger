@@ -7,7 +7,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models.assignment import Assignment, Question
 from app.models.course import Course
-from app.models.submission import Submission
+from app.models.question_score import QuestionScore
+from app.models.submission import Submission, SubmissionStatus
 from app.models.user import User
 from app.rag import llm, vector_store
 from app.rag.llm import LLMError
@@ -133,8 +134,29 @@ async def list_assignments(
         if student_id
         else null()
     )
+    # The student's published total; drafts of a review stay hidden.
+    my_score = (
+        select(func.sum(QuestionScore.final_marks))
+        .join(Submission, Submission.id == QuestionScore.submission_id)
+        .where(
+            of_submission,
+            Submission.student_id == student_id,
+            Submission.status == SubmissionStatus.PUBLISHED,
+        )
+        .correlate(Assignment)
+        .scalar_subquery()
+        if student_id
+        else null()
+    )
     statement = (
-        select(Assignment, question_count, total_marks, submission_count, my_status)
+        select(
+            Assignment,
+            question_count,
+            total_marks,
+            submission_count,
+            my_status,
+            my_score,
+        )
         .where(Assignment.course_id == course_id)
         .order_by(Assignment.deadline.asc(), Assignment.created_at.asc())
     )
@@ -151,8 +173,9 @@ async def list_assignments(
             # Students are not told how many classmates have submitted.
             submission_count=None if student_id else submissions,
             my_status=status,
+            my_score=float(score) if score is not None else None,
         )
-        for assignment, questions, marks, submissions, status in rows
+        for assignment, questions, marks, submissions, status, score in rows
     ]
 
 

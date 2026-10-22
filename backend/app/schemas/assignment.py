@@ -89,6 +89,7 @@ class AssignmentSummary(BaseModel):
     # The requesting student's submission status; None if not submitted
     # (or when a professor lists the assignments).
     my_status: SubmissionStatus | None = None
+    my_score: float | None = None  # the student's published total
 
 
 class StudentAssignmentRead(BaseModel):

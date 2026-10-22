@@ -5,6 +5,7 @@ from app.models.conversation import ChatMessage, ChatRole, Conversation
 from app.models.course import Course, Enrollment
 from app.models.course_material import CourseMaterial, MaterialStatus
 from app.models.question_score import QuestionScore
+from app.models.review_log import ReviewAction, ReviewLog
 from app.models.submission import Submission, SubmissionStatus
 from app.models.user import User, UserRole
 
@@ -19,6 +20,8 @@ __all__ = [
     "MaterialStatus",
     "Question",
     "QuestionScore",
+    "ReviewAction",
+    "ReviewLog",
     "Submission",
     "SubmissionStatus",
     "User",
