@@ -1,10 +1,14 @@
-"""Seed the Chat / Teaching demo: users, courses, enrollments and course material.
+"""Seed the SIGER demo: users, courses, material, assignments and graded work.
 
 Run from backend/:  uv run python -m scripts.seed_demo [--reingest | --remove]
 
 Demo data exists only when this script is run explicitly; the application never
-creates it. Safe to run repeatedly; existing users, courses and enrollments are
-reused. --remove deletes everything this script creates.
+creates it. Safe to run repeatedly; existing users, courses, enrollments and
+assignments are reused. --remove deletes everything this script creates.
+
+The assignments and their grades are written directly (no LLM calls), so the
+dashboards are populated even when the AI provider's quota is used up. Only the
+course material needs the embedding model; that step is skipped if it fails.
 """
 
 import argparse
@@ -14,12 +18,17 @@ from pathlib import Path
 from sqlalchemy import delete, select
 
 from app.db.session import AsyncSessionLocal, engine
+from app.models.assignment import Assignment
 from app.models.course import Course
 from app.models.course_material import CourseMaterial, MaterialStatus
+from app.models.submission import Submission
 from app.models.user import User
 from app.rag import llm, vector_store
+from app.rag.llm import LLMError
+from app.rag.vector_store import VectorStoreError
 from app.schemas.course import CourseCreate
 from app.schemas.user import UserCreate
+from app.services import storage
 from app.services.auth import get_user_by_email, register_user
 from app.services.courses import (
     create_course,
@@ -28,9 +37,19 @@ from app.services.courses import (
     get_enrollment,
 )
 from app.services.materials import delete_material_file, ingest_pdf
+from scripts.demo_assessments import (
+    CLASSMATES,
+    SAM_ASSIGNMENT_3_ANSWERS,
+    SAM_PLAN,
+    seed_assessments,
+)
+from scripts.text_pdf import text_pdf
 
 DEMO_PASSWORD = "SigerDemo123"
-DEMO_PDF = Path(__file__).resolve().parents[1] / "demo_data" / "db201_course_notes.pdf"
+DEMO_DATA = Path(__file__).resolve().parents[1] / "demo_data"
+DEMO_PDF = DEMO_DATA / "db201_course_notes.pdf"
+# Sam Student's answers to Assignment 3, ready to upload for a live AI grading.
+SAM_ANSWERS_PDF = DEMO_DATA / "sam_assignment3_answers.pdf"
 
 PROFESSOR = UserCreate(
     full_name="Dr. Ada Rao",
@@ -122,13 +141,17 @@ async def ensure_material(
         print("  skipped: set OPENROUTER_API_KEY in backend/.env, then run again")
         return
 
-    material = await ingest_pdf(
-        session,
-        course=course,
-        uploader=professor,
-        filename=DEMO_PDF.name,
-        data=DEMO_PDF.read_bytes(),
-    )
+    try:
+        material = await ingest_pdf(
+            session,
+            course=course,
+            uploader=professor,
+            filename=DEMO_PDF.name,
+            data=DEMO_PDF.read_bytes(),
+        )
+    except (LLMError, VectorStoreError) as exc:
+        print(f"  skipped: could not embed the notes ({exc}); run again later")
+        return
     print(
         f"  ingested {material.filename}: {material.page_count} pages, "
         f"{material.chunk_count} chunks"
@@ -137,7 +160,9 @@ async def ensure_material(
 
 async def remove_demo() -> None:
     """Delete the demo accounts and the courses they own, with their material."""
-    demo_emails = [user.email for user in (PROFESSOR, STUDENT, OUTSIDER)]
+    demo_emails = [user.email for user in (PROFESSOR, STUDENT, OUTSIDER)] + [
+        email for _, email, _, _ in CLASSMATES
+    ]
     async with AsyncSessionLocal() as session:
         users = list(
             await session.scalars(select(User).where(User.email.in_(demo_emails)))
@@ -157,6 +182,15 @@ async def remove_demo() -> None:
         for material in materials:
             await vector_store.delete_material(material.id)
             delete_material_file(material)
+        submissions = list(
+            await session.scalars(
+                select(Submission)
+                .join(Assignment, Assignment.id == Submission.assignment_id)
+                .where(Assignment.course_id.in_(course_ids))
+            )
+        )
+        for submission in submissions:
+            storage.remove(submission.stored_path)
 
         # Enrollments, materials and conversations go with the course/user rows
         # through ON DELETE CASCADE.
@@ -167,7 +201,8 @@ async def remove_demo() -> None:
     await engine.dispose()
     print(
         f"Removed {len(courses)} demo course(s) {[c.code for c in courses]}, "
-        f"{len(materials)} material(s) and {len(users)} demo account(s)."
+        f"{len(materials)} material(s), {len(submissions)} submission(s) and "
+        f"{len(users)} demo account(s)."
     )
 
 
@@ -184,11 +219,34 @@ async def main(reingest: bool) -> None:
         await ensure_enrolled(session, student, db201)
         await ensure_enrolled(session, student, cs210)
 
+        classmates = []
+        for name, email, ability, plans in CLASSMATES:
+            classmate = await get_or_create_user(
+                session,
+                UserCreate(
+                    full_name=name, email=email, password=DEMO_PASSWORD, role="student"
+                ),
+            )
+            await ensure_enrolled(session, classmate, db201)
+            classmates.append((classmate, ability, plans))
+
         print("Course material")
         await ensure_material(session, db201, professor, reingest)
 
+        print("Assignments and graded work (no LLM calls)")
+        ability, plans = SAM_PLAN
+        await seed_assessments(
+            session, db201, professor, [(student, ability, plans), *classmates]
+        )
+        if not SAM_ANSWERS_PDF.exists():
+            SAM_ANSWERS_PDF.write_bytes(text_pdf(SAM_ASSIGNMENT_3_ANSWERS))
+
     await engine.dispose()
     print(f"\nDone. All demo accounts use the password {DEMO_PASSWORD!r}.")
+    print(
+        "Live AI grading demo: log in as student.demo@siger.edu and submit "
+        f"{SAM_ANSWERS_PDF.relative_to(DEMO_DATA.parent)} to Assignment 3."
+    )
 
 
 if __name__ == "__main__":
