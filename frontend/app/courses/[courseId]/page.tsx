@@ -128,6 +128,9 @@ export default function CoursePage() {
                     Students join with this code and can then ask the AI Teaching Assistant about
                     the material below.
                   </p>
+                  <Link className={`${primaryButton} mt-4 w-full`} href={`/courses/${course.id}/analytics`}>
+                    Class analytics
+                  </Link>
                 </div>
               ) : (
                 <div className="shrink-0 md:w-72">
@@ -140,6 +143,12 @@ export default function CoursePage() {
                       Open AI Teaching Assistant
                     </span>
                   )}
+                  <Link
+                    className={`${secondaryButton} mt-2 w-full py-3`}
+                    href={`/courses/${course.id}/analytics`}
+                  >
+                    My progress
+                  </Link>
                   <p className="mt-2 text-center text-xs text-slate-500">
                     {readyCount > 0
                       ? "Answers come only from this course's material, with sources."

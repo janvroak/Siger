@@ -66,6 +66,8 @@ class Settings(BaseSettings):
     grading_concurrency: int = Field(default=2, gt=0)
     # A grading still running after this is stopped and marked failed.
     grading_timeout_seconds: int = Field(default=900, gt=0)
+    # A topic whose mastery is below this is reported as a learning gap.
+    learning_gap_threshold: float = Field(default=0.5, ge=0, le=1)
     max_upload_mb: int = Field(default=20, gt=0)
     # Original course PDFs; served only through the authorized material endpoint.
     upload_dir: Path = BACKEND_DIR / "uploads"

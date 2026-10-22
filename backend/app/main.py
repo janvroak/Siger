@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.routes.analytics import router as analytics_router
 from app.api.routes.assignments import router as assignments_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.chat import router as chat_router
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(materials_router)
     app.include_router(assignments_router)
     app.include_router(submissions_router)
+    app.include_router(analytics_router)
     app.include_router(chat_router)
     app.include_router(users_router)
 

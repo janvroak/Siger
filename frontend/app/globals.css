@@ -3,6 +3,17 @@
 :root {
   --background: #f8fafc;
   --foreground: #1f2937;
+
+  /* Chart roles (data-viz palette, validated against the white card surface). */
+  --viz-surface: #ffffff;
+  --viz-series-1: #2a78d6; /* the single data series: mastery, scores, submitted */
+  --viz-track: #e1e0d9; /* the unfilled remainder (pending) */
+  --viz-critical: #d03b3b; /* status: overdue / learning gap (always with icon + label) */
+  --viz-grid: #e1e0d9;
+  --viz-axis: #c3c2b7;
+  --viz-text-primary: #0b0b0b;
+  --viz-text-secondary: #52514e;
+  --viz-text-muted: #898781;
 }
 
 @theme inline {

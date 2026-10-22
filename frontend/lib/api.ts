@@ -612,3 +612,103 @@ export function getMyResult(
     { headers: authHeaders(token) },
   );
 }
+
+export type TopicMastery = {
+  topic: string;
+  mastery: number;
+  earned: number;
+  possible: number;
+  graded_answers: number;
+  is_gap: boolean;
+};
+
+export type AssignmentCompletion = {
+  assignment_id: string;
+  title: string;
+  deadline: string;
+  enrolled: number;
+  submitted: number;
+  pending: number;
+  overdue: number;
+  published: number;
+  rate: number;
+  average_score: number | null;
+};
+
+export type CourseAnalytics = {
+  course_id: string;
+  gap_threshold: number;
+  enrolled: number;
+  assignments: number;
+  comprehension: number | null;
+  completion_rate: number | null;
+  topics: TopicMastery[];
+  completion: AssignmentCompletion[];
+  students: {
+    student_id: string;
+    student_name: string;
+    student_email: string;
+    comprehension: number | null;
+    graded: number;
+    submitted: number;
+    overdue: number;
+  }[];
+  overdue: {
+    student_id: string;
+    student_name: string;
+    assignment_id: string;
+    assignment_title: string;
+    deadline: string;
+  }[];
+  agreement: {
+    reviewed_answers: number;
+    exact_agreement: number | null;
+    within_half_mark: number | null;
+    mean_abs_difference: number | null;
+    overrides: number;
+    flagged: number;
+    flagged_overridden: number;
+  };
+};
+
+export type StudentProgress = {
+  course_id: string;
+  student_id: string;
+  student_name: string;
+  gap_threshold: number;
+  comprehension: number | null;
+  topics: TopicMastery[];
+  trend: {
+    assignment_id: string;
+    title: string;
+    deadline: string;
+    earned: number;
+    possible: number;
+    score: number;
+  }[];
+  assignments: {
+    assignment_id: string;
+    title: string;
+    deadline: string;
+    state: "graded" | "under_review" | "submitted" | "overdue" | "pending" | "failed";
+    score: number | null;
+  }[];
+};
+
+export function getCourseAnalytics(token: string, courseId: string): Promise<CourseAnalytics> {
+  return request<CourseAnalytics>(`/courses/${courseId}/analytics`, { headers: authHeaders(token) });
+}
+
+export function getMyProgress(token: string, courseId: string): Promise<StudentProgress> {
+  return request<StudentProgress>(`/courses/${courseId}/analytics/me`, { headers: authHeaders(token) });
+}
+
+export function getStudentProgress(
+  token: string,
+  courseId: string,
+  studentId: string,
+): Promise<StudentProgress> {
+  return request<StudentProgress>(`/courses/${courseId}/analytics/students/${studentId}`, {
+    headers: authHeaders(token),
+  });
+}
