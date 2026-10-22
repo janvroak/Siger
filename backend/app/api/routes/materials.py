@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.access import course_for_member
 from app.auth.dependencies import get_current_professor, get_current_user
 from app.core.config import settings
 from app.db.session import get_db_session
@@ -21,7 +22,6 @@ from app.rag.llm import (
 from app.rag.pdf import InvalidPDFError
 from app.rag.vector_store import VectorStoreError
 from app.schemas.material import MaterialRead
-from app.services.courses import get_enrollment
 from app.services.materials import (
     DuplicateMaterialError,
     get_course_material,
@@ -120,7 +120,7 @@ async def read_materials(
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[MaterialRead]:
-    course = await _course_for_member(session, course_id, user)
+    course = await course_for_member(session, course_id, user)
     return await list_materials(session, course.id)
 
 
@@ -135,7 +135,7 @@ async def read_material_file(
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> FileResponse:
-    course = await _course_for_member(session, course_id, user)
+    course = await course_for_member(session, course_id, user)
     material = await get_course_material(session, course.id, material_id)
     # Students only see material that is ready, matching the course page.
     if material is None or (
@@ -157,25 +157,3 @@ async def read_material_file(
         filename=material.filename,
         content_disposition_type="inline",
     )
-
-
-async def _course_for_member(
-    session: AsyncSession, course_id: uuid.UUID, user: User
-) -> Course:
-    """The course, if the user owns it (professor) or is enrolled (student)."""
-    course = await session.get(Course, course_id)
-    if course is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Course not found"
-        )
-
-    is_owner = user.role == UserRole.PROFESSOR and course.professor_id == user.id
-    is_enrolled = user.role == UserRole.STUDENT and await get_enrollment(
-        session, user.id, course.id
-    )
-    if not (is_owner or is_enrolled):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to this course",
-        )
-    return course

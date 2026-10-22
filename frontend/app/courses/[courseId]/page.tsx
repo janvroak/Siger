@@ -5,14 +5,17 @@ import { useParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { AppShell, PageMessage } from "@/components/AppShell";
+import { AssignmentList } from "@/components/AssignmentList";
 import { courseAccent, plural } from "@/components/CourseCard";
 import { primaryButton, secondaryButton } from "@/components/Modal";
 import {
   ApiError,
   getCourse,
   getMaterialPdf,
+  listAssignments,
   listMaterials,
   uploadMaterial,
+  type AssignmentSummary,
   type Course,
   type Material,
 } from "@/lib/api";
@@ -35,21 +38,27 @@ export default function CoursePage() {
   const { token, user, error: authError } = useAuthedUser();
   const [course, setCourse] = useState<Course | null>(null);
   const [materials, setMaterials] = useState<Material[] | null>(null);
+  const [assignments, setAssignments] = useState<AssignmentSummary[] | null>(null);
   const [pageError, setPageError] = useState("");
   const [coursesVersion, setCoursesVersion] = useState(0);
 
   const fetchCourse = useCallback(
     (activeToken: string) =>
-      Promise.all([getCourse(activeToken, courseId), listMaterials(activeToken, courseId)]),
+      Promise.all([
+        getCourse(activeToken, courseId),
+        listMaterials(activeToken, courseId),
+        listAssignments(activeToken, courseId),
+      ]),
     [courseId],
   );
 
   const reload = useCallback(
     (activeToken: string) =>
       fetchCourse(activeToken)
-        .then(([loadedCourse, loadedMaterials]) => {
+        .then(([loadedCourse, loadedMaterials, loadedAssignments]) => {
           setCourse(loadedCourse);
           setMaterials(loadedMaterials);
+          setAssignments(loadedAssignments);
         })
         .catch((caughtError: unknown) => {
           setPageError(
@@ -138,6 +147,28 @@ export default function CoursePage() {
                 </div>
               )}
             </div>
+          </section>
+
+          <section className="mt-8">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Assignments</h2>
+              {isProfessor ? (
+                <Link className={primaryButton} href={`/courses/${course.id}/assignments/new`}>
+                  + New assignment
+                </Link>
+              ) : null}
+            </div>
+            {assignments ? (
+              <AssignmentList
+                courseId={course.id}
+                assignments={assignments}
+                emptyText={
+                  isProfessor
+                    ? "No assignments yet. Create one with questions and a model answer for each — submissions are graded against it."
+                    : "No assignments have been posted yet."
+                }
+              />
+            ) : null}
           </section>
 
           {isProfessor ? (

@@ -1,2 +1,1 @@
 """Siger backend application package."""
-

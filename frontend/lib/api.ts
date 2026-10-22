@@ -97,6 +97,62 @@ export type Conversation = {
   messages: StoredChatMessage[];
 };
 
+export type AssignmentSummary = {
+  id: string;
+  course_id: string;
+  title: string;
+  deadline: string;
+  created_at: string;
+  question_count: number;
+  total_marks: number;
+};
+
+/** A question as students see it: never the answer key. */
+export type StudentQuestion = {
+  id: string;
+  position: number;
+  text: string;
+  max_marks: number;
+  topic: string;
+};
+
+export type Question = StudentQuestion & {
+  model_answer: string;
+  key_points: string[];
+};
+
+export type StudentAssignment = {
+  id: string;
+  course_id: string;
+  title: string;
+  instructions: string;
+  deadline: string;
+  created_at: string;
+  questions: StudentQuestion[];
+};
+
+/** Full assignment with its answer key (course professor only). */
+export type Assignment = Omit<StudentAssignment, "questions"> & {
+  updated_at: string;
+  answer_keys_indexed: boolean;
+  questions: Question[];
+};
+
+export type QuestionInput = {
+  text: string;
+  model_answer: string;
+  max_marks: number;
+  topic: string;
+  key_points: string[];
+};
+
+export type AssignmentInput = {
+  title: string;
+  instructions: string;
+  deadline: string; // ISO 8601 with timezone
+  questions: QuestionInput[];
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -137,6 +193,9 @@ async function request<T>(
     throw new ApiError(errorDetail(payload), response.status);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return response.json() as Promise<T>;
 }
 
@@ -259,5 +318,68 @@ export function sendChatMessage(
     method: "POST",
     headers: { ...authHeaders(token), "Content-Type": "application/json" },
     body: JSON.stringify({ question }),
+  });
+}
+
+export function listAssignments(token: string, courseId: string): Promise<AssignmentSummary[]> {
+  return request<AssignmentSummary[]>(`/courses/${courseId}/assignments`, {
+    headers: authHeaders(token),
+  });
+}
+
+export function getAssignment(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+): Promise<StudentAssignment> {
+  return request<StudentAssignment>(`/courses/${courseId}/assignments/${assignmentId}`, {
+    headers: authHeaders(token),
+  });
+}
+
+/** The assignment with its answer key; only the course professor may call this. */
+export function getAssignmentKey(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+): Promise<Assignment> {
+  return request<Assignment>(`/courses/${courseId}/assignments/${assignmentId}/key`, {
+    headers: authHeaders(token),
+  });
+}
+
+export function createAssignment(
+  token: string,
+  courseId: string,
+  input: AssignmentInput,
+): Promise<Assignment> {
+  return request<Assignment>(`/courses/${courseId}/assignments`, {
+    method: "POST",
+    headers: { ...authHeaders(token), "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateAssignment(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+  input: AssignmentInput,
+): Promise<Assignment> {
+  return request<Assignment>(`/courses/${courseId}/assignments/${assignmentId}`, {
+    method: "PUT",
+    headers: { ...authHeaders(token), "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteAssignment(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+): Promise<void> {
+  return request<void>(`/courses/${courseId}/assignments/${assignmentId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
   });
 }

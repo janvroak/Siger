@@ -39,7 +39,10 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=60, gt=0)
 
     qdrant_url: str = "http://localhost:6333"
+    # Lecture material (the "slides" collection); the only one the chatbot searches.
     qdrant_collection: str = "course_chunks"
+    # Teacher model answers, used only for grading.
+    qdrant_answer_key_collection: str = "answer_keys"
 
     chunk_size: int = Field(default=1000, gt=100)
     chunk_overlap: int = Field(default=150, ge=0)
