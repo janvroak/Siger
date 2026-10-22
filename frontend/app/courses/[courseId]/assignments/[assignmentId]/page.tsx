@@ -48,6 +48,18 @@ export default function AssignmentPage() {
     }
   }, [token, isProfessor, loadRoster]);
 
+  // Keep the roster current while the evaluation agent is still grading.
+  const grading = roster?.students.some(
+    (row) => row.state === "submitted" || row.state === "evaluating",
+  );
+  useEffect(() => {
+    if (!token || !grading) {
+      return;
+    }
+    const timer = setInterval(() => void loadRoster(token), 10_000);
+    return () => clearInterval(timer);
+  }, [token, grading, loadRoster]);
+
   useEffect(() => {
     if (!token || !user) {
       return;

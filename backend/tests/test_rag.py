@@ -66,3 +66,102 @@ def test_parses_json_wrapped_in_code_fence() -> None:
 def test_rejects_non_json_output() -> None:
     with pytest.raises(LLMOutputError):
         _parse_json_object("I think the answer is 42.")
+
+
+def test_rate_limit_without_reset_header_is_still_a_rate_limit() -> None:
+    import httpx
+    import openai
+
+    from app.rag.llm import LLMRateLimitError, _rate_limited
+
+    response = httpx.Response(429, request=httpx.Request("POST", "http://x"))
+    exc = openai.RateLimitError(
+        "limited", response=response, body={"message": "Rate limit exceeded"}
+    )
+    converted = _rate_limited(exc)
+    assert isinstance(converted, LLMRateLimitError) and converted.retry_after is None
+
+
+async def _no_sleep(_: float) -> None:
+    return None
+
+
+def _completion(content: str | None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+    )
+
+
+def test_empty_replies_are_retried(monkeypatch) -> None:
+    import asyncio
+
+    from app.rag import llm
+
+    replies = [_completion(None), _completion('{"ok": true}')]
+
+    async def create(**_):
+        return replies.pop(0)
+
+    fake = type("C", (), {})()
+    fake.chat = type("Ch", (), {})()
+    fake.chat.completions = type("Co", (), {"create": staticmethod(create)})()
+    monkeypatch.setattr(llm, "_client", lambda: fake)
+    monkeypatch.setattr(llm.asyncio, "sleep", _no_sleep)
+    assert asyncio.run(llm.chat_json("s", "u")) == {"ok": True}
+    assert not replies
+
+
+def test_retries_give_up_after_max_attempts(monkeypatch) -> None:
+    import asyncio
+
+    import pytest
+
+    from app.rag import llm
+
+    calls = []
+
+    async def create(**_):
+        calls.append(1)
+        return _completion("")
+
+    fake = type("C", (), {})()
+    fake.chat = type("Ch", (), {})()
+    fake.chat.completions = type("Co", (), {"create": staticmethod(create)})()
+    monkeypatch.setattr(llm, "_client", lambda: fake)
+    monkeypatch.setattr(llm.asyncio, "sleep", _no_sleep)
+    monkeypatch.setattr(llm.settings, "llm_max_attempts", 3)
+    monkeypatch.setattr(llm, "_chat_slots", None)
+    with pytest.raises(llm.LLMError, match="after 3 attempts"):
+        asyncio.run(llm.chat_json("s", "u"))
+    assert len(calls) == 3
+
+
+def test_a_call_that_never_returns_times_out_and_is_retried(monkeypatch) -> None:
+    import asyncio
+
+    from app.rag import llm
+
+    calls = []
+    real_sleep = asyncio.sleep
+
+    async def create(**_):
+        calls.append(1)
+        if len(calls) == 1:
+            await real_sleep(10)  # a stalled provider
+        return _completion('{"ok": true}')
+
+    fake = type("C", (), {})()
+    fake.chat = type("Ch", (), {})()
+    fake.chat.completions = type("Co", (), {"create": staticmethod(create)})()
+    monkeypatch.setattr(llm, "_client", lambda: fake)
+    monkeypatch.setattr(llm.settings, "llm_timeout_seconds", 0.05)
+    monkeypatch.setattr(llm, "_chat_slots", None)
+
+    async def short_backoff(seconds):
+        await real_sleep(0 if seconds >= 1 else seconds)
+
+    monkeypatch.setattr(llm.asyncio, "sleep", short_backoff)
+    assert asyncio.run(llm.chat_json("s", "u")) == {"ok": True}
+    assert len(calls) == 2

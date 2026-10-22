@@ -4,7 +4,14 @@ import uuid
 from pathlib import PurePath
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,16 +20,23 @@ from app.api.routes.assignments import get_course_assignment
 from app.auth.dependencies import get_current_professor, get_current_student
 from app.core.config import settings
 from app.db.session import get_db_session
-from app.models.submission import Submission
+from app.models.submission import Submission, SubmissionStatus
 from app.models.user import User
 from app.rag.pdf import InvalidPDFError
-from app.schemas.submission import MySubmission, SubmissionRead, SubmissionRoster
+from app.schemas.submission import (
+    MySubmission,
+    SubmissionRead,
+    SubmissionResults,
+    SubmissionRoster,
+)
 from app.services import storage
+from app.services.grading import GRADABLE, grade_submission
 from app.services.submissions import (
     AlreadySubmittedError,
     SubmissionClosedError,
     get_student_submission,
     get_submission,
+    results,
     roster,
     submit,
 )
@@ -42,6 +56,7 @@ async def submit_assignment(
     course_id: uuid.UUID,
     assignment_id: uuid.UUID,
     file: UploadFile,
+    background: BackgroundTasks,
     student: Annotated[User, Depends(get_current_student)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> Submission:
@@ -63,7 +78,7 @@ async def submit_assignment(
         )
 
     try:
-        return await submit(
+        submission = await submit(
             session,
             assignment=assignment,
             student=student,
@@ -86,6 +101,10 @@ async def submit_assignment(
             detail=f"{exc}. Scanned or handwritten PDFs without a text layer "
             "are not supported.",
         ) from None
+
+    # The response returns now; the evaluation agent grades in the background.
+    background.add_task(grade_submission, submission.id)
+    return submission
 
 
 @router.get(
@@ -156,6 +175,72 @@ async def read_submission_file(
     assignment = await get_course_assignment(session, course.id, assignment_id)
     submission = await get_submission(session, assignment.id, submission_id)
     return _pdf(submission)
+
+
+@router.get(
+    f"{ASSIGNMENT}/submissions/{{submission_id}}",
+    response_model=SubmissionResults,
+    summary="A submission's AI evaluation (course professor only)",
+)
+async def read_submission_results(
+    course_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    submission_id: uuid.UUID,
+    professor: Annotated[User, Depends(get_current_professor)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> SubmissionResults:
+    submission = await _professor_submission(
+        session, course_id, assignment_id, submission_id, professor
+    )
+    return await results(session, submission)
+
+
+@router.post(
+    f"{ASSIGNMENT}/submissions/{{submission_id}}/grade",
+    response_model=SubmissionRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Retry AI grading of a failed or stuck submission (course professor only)",
+)
+async def regrade_submission(
+    course_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    submission_id: uuid.UUID,
+    background: BackgroundTasks,
+    professor: Annotated[User, Depends(get_current_professor)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> Submission:
+    submission = await _professor_submission(
+        session, course_id, assignment_id, submission_id, professor
+    )
+    if submission.status not in GRADABLE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only submissions that are waiting or whose grading failed can "
+            "be graded again",
+        )
+    submission.status = SubmissionStatus.SUBMITTED
+    submission.error = None
+    await session.commit()
+    await session.refresh(submission)
+    background.add_task(grade_submission, submission.id)
+    return submission
+
+
+async def _professor_submission(
+    session: AsyncSession,
+    course_id: uuid.UUID,
+    assignment_id: uuid.UUID,
+    submission_id: uuid.UUID,
+    professor: User,
+) -> Submission:
+    course = await owned_course(session, course_id, professor)
+    assignment = await get_course_assignment(session, course.id, assignment_id)
+    submission = await get_submission(session, assignment.id, submission_id)
+    if submission is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Submission not found"
+        )
+    return submission
 
 
 def _pdf(submission: Submission | None) -> FileResponse:

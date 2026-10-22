@@ -14,6 +14,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from app.api.routes import submissions as submission_routes
 from app.auth.dependencies import get_current_user
 from app.core.config import settings
 from app.db.session import get_db_session
@@ -122,6 +123,14 @@ async def world(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         await db.commit()
 
         w = World(db, professor, other_professor, student, outsider, course)
+        w.sessions = sessions
+        # Uploads schedule grading; tests that want it use the `grader` fixture.
+        w.graded = []
+
+        async def record_grading(submission_id):
+            w.graded.append(submission_id)
+
+        monkeypatch.setattr(submission_routes, "grade_submission", record_grading)
 
         async def fake_embed(texts):
             return [[0.1] * settings.embedding_dimensions for _ in texts]

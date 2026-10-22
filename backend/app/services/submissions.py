@@ -5,15 +5,19 @@ from sqlalchemy import exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.assignment import Assignment
+from app.models.assignment import Assignment, Question
 from app.models.course import Enrollment
+from app.models.question_score import QuestionScore
 from app.models.submission import Submission
 from app.models.user import User
 from app.rag.pdf import extract_pdf
 from app.schemas.submission import (
+    QuestionResult,
     RosterRow,
     SubmissionRead,
+    SubmissionResults,
     SubmissionRoster,
+    TraceStepRead,
 )
 from app.services import storage
 
@@ -150,4 +154,62 @@ async def roster(session: AsyncSession, assignment: Assignment) -> SubmissionRos
         pending=len(students) - submitted - overdue,
         overdue=overdue,
         students=students,
+    )
+
+
+async def results(session: AsyncSession, submission: Submission) -> SubmissionResults:
+    """A submission with its per-question evaluation, in question order."""
+    student = await session.get(User, submission.student_id)
+    assert student is not None
+    rows = await session.execute(
+        select(Question, QuestionScore)
+        .outerjoin(
+            QuestionScore,
+            (QuestionScore.question_id == Question.id)
+            & (QuestionScore.submission_id == submission.id),
+        )
+        .where(Question.assignment_id == submission.assignment_id)
+        .order_by(Question.position)
+    )
+    questions: list[QuestionResult] = []
+    total_marks = 0.0
+    for question, score in rows:
+        total_marks += question.max_marks
+        if score is None:
+            continue  # not graded yet
+        questions.append(
+            QuestionResult(
+                question_id=question.id,
+                position=question.position,
+                text=question.text,
+                topic=question.topic,
+                max_marks=question.max_marks,
+                student_answer=score.student_answer,
+                similarity=score.similarity,
+                ai_marks=score.ai_marks,
+                final_marks=score.final_marks,
+                key_points_hit=score.key_points_hit,
+                key_points_missed=score.key_points_missed,
+                incorrect_points=score.incorrect_points,
+                rationale=score.rationale,
+                confidence=score.confidence,
+                flagged=score.flagged,
+                rechecked=score.rechecked,
+                feedback=score.feedback,
+                feedback_sources=score.feedback_sources,
+            )
+        )
+    return SubmissionResults(
+        submission=SubmissionRead.model_validate(submission),
+        student_name=student.full_name,
+        student_email=student.email,
+        error=submission.error,
+        graded_at=submission.graded_at,
+        grading_trace=[
+            TraceStepRead(**step) for step in submission.grading_trace or []
+        ],
+        total_ai_marks=sum(question.ai_marks for question in questions),
+        total_marks=total_marks,
+        flagged_count=sum(1 for question in questions if question.flagged),
+        questions=questions,
     )

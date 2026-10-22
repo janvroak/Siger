@@ -196,6 +196,40 @@ export type AssignmentInput = {
   questions: QuestionInput[];
 };
 
+export type QuestionResult = {
+  question_id: string;
+  position: number;
+  text: string;
+  topic: string;
+  max_marks: number;
+  student_answer: string;
+  similarity: number | null;
+  ai_marks: number;
+  final_marks: number | null;
+  key_points_hit: string[];
+  key_points_missed: string[];
+  incorrect_points: string[];
+  rationale: string;
+  confidence: number;
+  flagged: boolean;
+  rechecked: boolean;
+  feedback: string;
+  feedback_sources: { filename: string; page: number }[];
+};
+
+export type SubmissionResults = {
+  submission: Submission;
+  student_name: string;
+  student_email: string;
+  error: string | null;
+  graded_at: string | null;
+  grading_trace: TraceStep[];
+  total_ai_marks: number;
+  total_marks: number;
+  flagged_count: number;
+  questions: QuestionResult[];
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -479,5 +513,31 @@ export function getSubmissionPdf(
   return fetchPdf(
     token,
     `/courses/${courseId}/assignments/${assignmentId}/submissions/${submissionId}/file`,
+  );
+}
+
+/** A submission's AI evaluation (course professor only). */
+export function getSubmissionResults(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+  submissionId: string,
+): Promise<SubmissionResults> {
+  return request<SubmissionResults>(
+    `/courses/${courseId}/assignments/${assignmentId}/submissions/${submissionId}`,
+    { headers: authHeaders(token) },
+  );
+}
+
+/** Retry AI grading of a failed or stuck submission. */
+export function regradeSubmission(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+  submissionId: string,
+): Promise<Submission> {
+  return request<Submission>(
+    `/courses/${courseId}/assignments/${assignmentId}/submissions/${submissionId}/grade`,
+    { method: "POST", headers: authHeaders(token) },
   );
 }

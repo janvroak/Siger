@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     embedding_model: str = "openai/text-embedding-3-small"
     embedding_dimensions: int = Field(default=1536, gt=0)
     llm_timeout_seconds: float = Field(default=60, gt=0)
+    # Chat calls are retried on timeouts, provider errors and empty replies.
+    llm_max_attempts: int = Field(default=3, gt=0)
+    # Chat calls in flight at once across the app (free tiers drop bursts).
+    llm_max_parallel: int = Field(default=3, gt=0)
 
     qdrant_url: str = "http://localhost:6333"
     # Lecture material (the "slides" collection); the only one the chatbot searches.
@@ -50,6 +54,18 @@ class Settings(BaseSettings):
     # Cosine similarity below this means the course material does not cover the
     # question, so the Teaching node refuses without calling the LLM.
     retrieval_min_score: float = Field(default=0.3, ge=0, le=1)
+    # Grading. Embedding similarity is turned into an expected score by mapping
+    # [low, high] onto [0, 1]; these depend on the embedding model. Measured for
+    # nvidia/nemotron-3-embed-1b: wrong ~0.43, partial ~0.49, correct ~0.62-0.70.
+    grading_similarity_low: float = Field(default=0.35, ge=0, le=1)
+    grading_similarity_high: float = Field(default=0.70, ge=0, le=1)
+    # Confidence below this means similarity and LLM marks disagree: the
+    # question is re-checked once, then flagged for faculty.
+    grading_min_confidence: float = Field(default=0.6, ge=0, le=1)
+    # Submissions graded at the same time (each makes several LLM calls).
+    grading_concurrency: int = Field(default=2, gt=0)
+    # A grading still running after this is stopped and marked failed.
+    grading_timeout_seconds: int = Field(default=900, gt=0)
     max_upload_mb: int = Field(default=20, gt=0)
     # Original course PDFs; served only through the authorized material endpoint.
     upload_dir: Path = BACKEND_DIR / "uploads"

@@ -14,6 +14,7 @@ from app.api.routes.submissions import router as submissions_router
 from app.api.routes.users import router as users_router
 from app.core.config import settings
 from app.rag import vector_store
+from app.services import grading
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await vector_store.ensure_answer_key_collection()
     except vector_store.VectorStoreError as exc:
         logger.warning("Course knowledge base not ready: %s", exc)
+    # Gradings cut off by a restart would otherwise stay "evaluating" forever.
+    try:
+        if recovered := await grading.recover_interrupted():
+            logger.warning("Marked %d interrupted grading(s) as failed", recovered)
+    except Exception:
+        logger.exception("Could not check for interrupted gradings")
     yield
 
 

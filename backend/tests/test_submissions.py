@@ -48,6 +48,8 @@ async def test_student_submits_and_tracks_status(world) -> None:
 
         mine = (await client.get(url)).json()["submission"]
         assert mine["id"] == created.json()["id"]
+        # Grading was scheduled for the new submission.
+        assert [str(i) for i in world.graded] == [mine["id"]]
 
         pdf = await client.get(f"{url}/file")
         assert pdf.status_code == 200 and pdf.content == ANSWERS_PDF

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { secondaryButton } from "@/components/Modal";
 import { OpenPdfButton } from "@/components/OpenPdfButton";
 import { StatusBadge } from "@/components/SubmissionStatus";
@@ -85,12 +87,20 @@ export function RosterPanel({
                   </td>
                   <td className="py-3 text-right">
                     {row.submission ? (
-                      <OpenPdfButton
-                        label="PDF ↗"
-                        load={() =>
-                          getSubmissionPdf(token, courseId, assignmentId, row.submission!.id)
-                        }
-                      />
+                      <span className="inline-flex items-start gap-2">
+                        <OpenPdfButton
+                          label="PDF ↗"
+                          load={() =>
+                            getSubmissionPdf(token, courseId, assignmentId, row.submission!.id)
+                          }
+                        />
+                        <Link
+                          className={secondaryButton}
+                          href={`/courses/${courseId}/assignments/${assignmentId}/submissions/${row.submission.id}`}
+                        >
+                          {row.state === "under_review" ? "Review →" : "Open →"}
+                        </Link>
+                      </span>
                     ) : null}
                   </td>
                 </tr>

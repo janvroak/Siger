@@ -57,3 +57,51 @@ class SubmissionRoster(BaseModel):
     pending: int  # not submitted, deadline not reached
     overdue: int  # not submitted, deadline passed
     students: list[RosterRow]
+
+
+class FeedbackSource(BaseModel):
+    filename: str
+    page: int
+
+
+class QuestionResult(BaseModel):
+    """One question's evaluation, with everything that explains it."""
+
+    question_id: uuid.UUID
+    position: int
+    text: str
+    topic: str
+    max_marks: float
+    student_answer: str
+    similarity: float | None
+    ai_marks: float
+    final_marks: float | None
+    key_points_hit: list[str]
+    key_points_missed: list[str]
+    incorrect_points: list[str]
+    rationale: str
+    confidence: float
+    flagged: bool
+    rechecked: bool
+    feedback: str
+    feedback_sources: list[FeedbackSource]
+
+
+class TraceStepRead(BaseModel):
+    node: str
+    detail: str
+
+
+class SubmissionResults(BaseModel):
+    """A graded submission as faculty review it."""
+
+    submission: SubmissionRead
+    student_name: str
+    student_email: str
+    error: str | None
+    graded_at: datetime | None
+    grading_trace: list[TraceStepRead]
+    total_ai_marks: float
+    total_marks: float
+    flagged_count: int
+    questions: list[QuestionResult]

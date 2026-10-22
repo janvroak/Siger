@@ -1,3 +1,4 @@
+import asyncio
 import json
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -37,7 +38,7 @@ def _rate_limited(exc: openai.RateLimitError) -> LLMRateLimitError:
     reset: datetime | None = None
     body = exc.body if isinstance(exc.body, dict) else {}
     headers = (body.get("metadata") or {}).get("headers") or {}
-    with suppress(TypeError, ValueError, OverflowError):
+    with suppress(KeyError, TypeError, ValueError, OverflowError):
         reset = datetime.fromtimestamp(int(headers["X-RateLimit-Reset"]) / 1000, UTC)
     return LLMRateLimitError(f"Rate limit reached: {body.get('message', exc)}", reset)
 
@@ -99,8 +100,46 @@ async def embed(texts: list[str]) -> list[list[float]]:
     return vectors
 
 
+class _TransientLLMError(LLMError):
+    """A failure worth retrying: timeout, provider 5xx, or an empty reply."""
+
+
+# Free-tier providers drop or empty out replies under load, so every caller
+# shares a small number of parallel chat calls.
+_chat_slots: asyncio.Semaphore | None = None
+
+
+def _slots() -> asyncio.Semaphore:
+    global _chat_slots
+    if _chat_slots is None:
+        _chat_slots = asyncio.Semaphore(settings.llm_max_parallel)
+    return _chat_slots
+
+
 async def chat_json(system: str, user: str) -> dict[str, Any]:
-    """Run one chat completion that must return a JSON object."""
+    """Run one chat completion that must return a JSON object.
+
+    Transient failures (timeouts, provider errors, empty or malformed replies)
+    are retried with a short backoff; rate limits and request errors are not.
+    """
+    attempts = settings.llm_max_attempts
+    for attempt in range(1, attempts + 1):
+        try:
+            async with _slots():
+                # A hard deadline: OpenRouter keeps slow requests alive with
+                # keep-alive bytes, so the client's read timeout never fires.
+                async with asyncio.timeout(settings.llm_timeout_seconds):
+                    return await _chat_json_once(system, user)
+        except (_TransientLLMError, LLMOutputError, TimeoutError):
+            if attempt == attempts:
+                raise _TransientLLMError(
+                    f"No usable reply from the AI provider after {attempts} attempts"
+                ) from None
+            await asyncio.sleep(2**attempt)
+    raise AssertionError("unreachable")
+
+
+async def _chat_json_once(system: str, user: str) -> dict[str, Any]:
     try:
         response = await _client().chat.completions.create(
             model=settings.chat_model,
@@ -113,6 +152,9 @@ async def chat_json(system: str, user: str) -> dict[str, Any]:
         )
     except openai.RateLimitError as exc:
         raise _rate_limited(exc) from exc
+    except (openai.APIConnectionError, openai.InternalServerError) as exc:
+        # APITimeoutError is an APIConnectionError.
+        raise _TransientLLMError(f"Chat completion failed: {exc}") from exc
     except openai.OpenAIError as exc:
         raise LLMError(f"Chat completion failed: {exc}") from exc
 
