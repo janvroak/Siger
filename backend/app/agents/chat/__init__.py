@@ -1,4 +1,4 @@
-"""Chat / Teaching flow: Planner -> Retrieval (RAG) -> Teaching -> in scope?"""
+"""Lecture chatbot: retrieve (slides) -> check relevance -> answer or refuse."""
 
 from app.agents.chat.graph import chat_graph, run_chat
 

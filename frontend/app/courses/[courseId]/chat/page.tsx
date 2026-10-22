@@ -44,6 +44,11 @@ const STATUS_BADGE: Record<ChatStatus, { label: string; className: string }> = {
 };
 
 const NODE_LABELS: Record<string, string> = {
+  retrieve: "Retrieve",
+  check_relevance: "Relevance check",
+  answer: "Answer",
+  refuse: "Refuse",
+  // Steps of the earlier flow, still shown in saved conversations.
   planner: "Planner",
   retrieval: "Retrieval",
   teaching: "Teaching",

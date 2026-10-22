@@ -1,10 +1,11 @@
-"""LangGraph wiring for the Chat / Teaching flow.
+"""LangGraph wiring for the lecture chatbot (revised architecture, Figure 4).
 
-START -> planner -> retrieval -> teaching -> END        (grounded / not in material)
-           |                       |
-           +-- off_topic ------+---+-- out of scope
-                               v
-                            refusal -> END
+START -> retrieve -> check_relevance --relevant--> answer --grounded--> END
+                                     |                    --off-topic--+
+                                     +--out of scope--> refuse <-------+--> END
+
+Scope is decided from retrieval similarity before any LLM call, so questions
+outside the course material cost no LLM request and are refused consistently.
 """
 
 from typing import Literal
@@ -12,30 +13,30 @@ from typing import Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from app.agents.chat.nodes import planner, refusal, retrieval, teaching
+from app.agents.chat.nodes import answer, check_relevance, refuse, retrieve
 from app.agents.chat.state import ChatState
 
 
-def _after_planner(state: ChatState) -> Literal["retrieval", "refusal"]:
-    return "refusal" if state["route"] == "off_topic" else "retrieval"
+def _relevant(state: ChatState) -> Literal["answer", "refuse"]:
+    return "answer" if state.get("chunks") else "refuse"
 
 
-def _in_scope(state: ChatState) -> Literal["refusal", "__end__"]:
-    return "refusal" if state["status"] == "out_of_scope" else END
+def _after_answer(state: ChatState) -> Literal["refuse", "__end__"]:
+    return "refuse" if state.get("status") == "out_of_scope" else END
 
 
 def build_chat_graph() -> CompiledStateGraph:
     graph = StateGraph(ChatState)
-    graph.add_node("planner", planner)
-    graph.add_node("retrieval", retrieval)
-    graph.add_node("teaching", teaching)
-    graph.add_node("refusal", refusal)
+    graph.add_node("retrieve", retrieve)
+    graph.add_node("check_relevance", check_relevance)
+    graph.add_node("answer", answer)
+    graph.add_node("refuse", refuse)
 
-    graph.add_edge(START, "planner")
-    graph.add_conditional_edges("planner", _after_planner, ["retrieval", "refusal"])
-    graph.add_edge("retrieval", "teaching")
-    graph.add_conditional_edges("teaching", _in_scope, ["refusal", END])
-    graph.add_edge("refusal", END)
+    graph.add_edge(START, "retrieve")
+    graph.add_edge("retrieve", "check_relevance")
+    graph.add_conditional_edges("check_relevance", _relevant, ["answer", "refuse"])
+    graph.add_conditional_edges("answer", _after_answer, ["refuse", END])
+    graph.add_edge("refuse", END)
     return graph.compile()
 
 

@@ -1,4 +1,4 @@
-"""Nodes of the Chat / Teaching graph (SIGER architecture, Figure 3)."""
+"""Nodes of the lecture chatbot (SIGER revised architecture, Figure 4)."""
 
 import re
 from typing import Any
@@ -6,13 +6,11 @@ from typing import Any
 from app.agents.chat.prompts import (
     NOT_IN_MATERIAL_ANSWER,
     OUT_OF_SCOPE_ANSWER,
-    PLANNER_SYSTEM,
     TEACHING_SYSTEM,
 )
 from app.agents.chat.state import ChatState, ChatTurn, TraceStep
 from app.core.config import settings
 from app.rag import llm, vector_store
-from app.rag.llm import LLMOutputError
 from app.rag.vector_store import RetrievedChunk
 
 _CITATION = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
@@ -21,58 +19,56 @@ HISTORY_TURNS = 6
 HISTORY_CHARS = 800
 
 
-async def planner(state: ChatState) -> dict[str, Any]:
-    """Route the request and turn the question into a standalone search query."""
-    prompt = PLANNER_SYSTEM.format(
-        course_code=state["course_code"],
-        course_title=state["course_title"],
-        course_description=state["course_description"],
-    )
-    message = (
-        f"{_render_history(state.get('history', []))}"
-        f"Student's latest message:\n{state['question']}"
-    )
-    try:
-        decision = await llm.chat_json(prompt, message)
-    except LLMOutputError:
-        # A malformed plan should not block the student; take the chat path.
-        decision = {}
+async def retrieve(state: ChatState) -> dict[str, Any]:
+    """Search the course's lecture material (never the answer keys).
 
-    route = "off_topic" if decision.get("route") == "off_topic" else "course_question"
-    search_query = str(decision.get("search_query") or "").strip() or state["question"]
-    reason = str(decision.get("reason") or "").strip()
-    detail = f"route={route}; query={search_query!r}"
+    A follow-up such as "and its disadvantages?" only makes sense with the
+    previous question, so when there is one, the question is also searched
+    together with it - in the same embedding call - and the best matches of
+    both searches are kept. This replaces an LLM query-rewriting step.
+    """
+    queries = [state["question"]]
+    previous = _last_user_turn(state.get("history", []))
+    if previous:
+        queries.append(f"{previous[:HISTORY_CHARS]}\n{state['question']}")
+
+    vectors = await llm.embed(queries)
+    best: dict[tuple[str, int], RetrievedChunk] = {}
+    for vector in vectors:
+        for chunk in await vector_store.search(
+            course_id=state["course_id"], vector=vector, limit=settings.retrieval_top_k
+        ):
+            key = (chunk.material_id, chunk.chunk_index)
+            if key not in best or chunk.score > best[key].score:
+                best[key] = chunk
+    candidates = sorted(best.values(), key=lambda c: c.score, reverse=True)
+    candidates = candidates[: settings.retrieval_top_k]
+    detail = f"{len(candidates)} chunk(s) from the slides"
+    if previous:
+        detail += " (question searched alone and with the previous one)"
     return {
-        "route": route,
-        "search_query": search_query,
-        "trace": [_step("planner", f"{detail}; {reason}" if reason else detail)],
+        "search_query": queries[-1],
+        "chunks": candidates,
+        "trace": [_step("retrieve", detail)],
     }
 
 
-async def retrieval(state: ChatState) -> dict[str, Any]:
-    """Fetch the selected course's most relevant chunks from Qdrant."""
-    [vector] = await llm.embed([state["search_query"]])
-    candidates = await vector_store.search(
-        course_id=state["course_id"], vector=vector, limit=settings.retrieval_top_k
-    )
+async def check_relevance(state: ChatState) -> dict[str, Any]:
+    """Decide scope from retrieval similarity, before any LLM call."""
+    candidates = state.get("chunks", [])
     relevant = [c for c in candidates if c.score >= settings.retrieval_min_score]
-
     top = f"{candidates[0].score:.2f}" if candidates else "n/a"
+    verdict = "relevant" if relevant else "out of scope; LLM not called"
     detail = (
-        f"{len(relevant)} of {len(candidates)} chunks above similarity "
-        f"{settings.retrieval_min_score:.2f} (top {top})"
+        f"{len(relevant)} of {len(candidates)} above similarity "
+        f"{settings.retrieval_min_score:.2f} (top {top}): {verdict}"
     )
-    return {"chunks": relevant, "trace": [_step("retrieval", detail)]}
+    return {"chunks": relevant, "trace": [_step("check_relevance", detail)]}
 
 
-async def teaching(state: ChatState) -> dict[str, Any]:
-    """Answer strictly from the retrieved course context."""
-    chunks = state.get("chunks", [])
-    if not chunks:
-        # Nothing in the course material is close enough; don't ask the LLM to
-        # answer from thin air.
-        return _not_in_material(state, "no relevant course material; LLM not called")
-
+async def answer(state: ChatState) -> dict[str, Any]:
+    """Answer strictly from the relevant lecture excerpts."""
+    chunks = state["chunks"]
     prompt = TEACHING_SYSTEM.format(
         course_code=state["course_code"], course_title=state["course_title"]
     )
@@ -89,35 +85,40 @@ async def teaching(state: ChatState) -> dict[str, Any]:
 
     status = result.get("status")
     if status == "off_topic":
+        # The words matched the slides, but the request is not about the course.
         return {
             "status": "out_of_scope",
-            "trace": [_step("teaching", "model judged the question off-topic")],
+            "trace": [_step("answer", "model judged the question off-topic")],
         }
 
-    answer = str(result.get("answer") or "").strip()
-    if status != "answered" or not answer:
+    text = str(result.get("answer") or "").strip()
+    if status != "answered" or not text:
         return _not_in_material(state, "model found the excerpts insufficient")
 
-    sources, answer = _cited(chunks, result.get("cited_excerpts"), answer)
+    sources, text = _cited(chunks, result.get("cited_excerpts"), text)
     return {
         "status": "grounded",
-        "answer": answer,
+        "answer": text,
         "sources": sources,
-        "trace": [
-            _step("teaching", f"grounded answer citing {len(sources)} excerpt(s)")
-        ],
+        "trace": [_step("answer", f"grounded answer citing {len(sources)} excerpt(s)")],
     }
 
 
-async def refusal(state: ChatState) -> dict[str, Any]:
-    """Politely decline questions outside the selected course."""
+async def refuse(state: ChatState) -> dict[str, Any]:
+    """Politely decline: nothing relevant in the slides, or not a course question."""
+    if state.get("status") == "out_of_scope":
+        return {
+            "answer": OUT_OF_SCOPE_ANSWER.format(
+                course_code=state["course_code"], course_title=state["course_title"]
+            ),
+            "sources": [],
+            "trace": [_step("refuse", "not a course question; politely declined")],
+        }
     return {
-        "status": "out_of_scope",
-        "answer": OUT_OF_SCOPE_ANSWER.format(
-            course_code=state["course_code"], course_title=state["course_title"]
-        ),
+        "status": "not_in_material",
+        "answer": NOT_IN_MATERIAL_ANSWER.format(course_code=state["course_code"]),
         "sources": [],
-        "trace": [_step("refusal", "out-of-scope question politely declined")],
+        "trace": [_step("refuse", "nothing relevant in the slides; politely declined")],
     }
 
 
@@ -126,8 +127,15 @@ def _not_in_material(state: ChatState, detail: str) -> dict[str, Any]:
         "status": "not_in_material",
         "answer": NOT_IN_MATERIAL_ANSWER.format(course_code=state["course_code"]),
         "sources": [],
-        "trace": [_step("teaching", f"not in course material: {detail}")],
+        "trace": [_step("answer", f"not in course material: {detail}")],
     }
+
+
+def _last_user_turn(history: list[ChatTurn]) -> str:
+    for turn in reversed(history):
+        if turn["role"] == "user":
+            return turn["content"]
+    return ""
 
 
 def _cited(

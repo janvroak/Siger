@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from app.agents.chat import nodes, run_chat
-from app.rag.llm import LLMError, LLMOutputError
+from app.rag.llm import LLMError
 from app.rag.vector_store import RetrievedChunk
 
 pytestmark = pytest.mark.anyio
@@ -32,27 +32,30 @@ def chunk(score: float, page: int = 1) -> RetrievedChunk:
 
 
 class FakeLLM:
-    def __init__(self, planner: Any, teaching: Any = None) -> None:
-        self.replies = {"Planner": planner, "Teaching": teaching}
+    """The teaching LLM plus embeddings; records every call."""
+
+    def __init__(self, teaching: Any = None) -> None:
+        self.teaching = teaching
         self.calls: list[str] = []
+        self.embedded: list[list[str]] = []
 
     async def chat_json(self, system: str, user: str) -> dict[str, Any]:
-        agent = "Planner" if "the Planner of SIGER" in system else "Teaching"
-        self.calls.append(agent)
-        reply = self.replies[agent]
-        if isinstance(reply, Exception):
-            raise reply
-        return reply
+        self.calls.append("Teaching")
+        if isinstance(self.teaching, Exception):
+            raise self.teaching
+        return self.teaching
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        return [[0.1, 0.2] for _ in texts]
+        self.embedded.append(texts)
+        return [[float(i), 0.2] for i, _ in enumerate(texts)]
 
 
 @pytest.fixture
 def wire(monkeypatch: pytest.MonkeyPatch):
-    def _wire(fake: FakeLLM, chunks: list[RetrievedChunk]) -> FakeLLM:
-        async def search(**_: Any) -> list[RetrievedChunk]:
-            return chunks
+    def _wire(fake: FakeLLM, chunks: Any) -> FakeLLM:
+        async def search(*, vector: list[float], **_: Any) -> list[RetrievedChunk]:
+            # A list of results per query, or the same chunks for every query.
+            return chunks[int(vector[0])] if isinstance(chunks, dict) else chunks
 
         monkeypatch.setattr(nodes.llm, "chat_json", fake.chat_json)
         monkeypatch.setattr(nodes.llm, "embed", fake.embed)
@@ -69,12 +72,11 @@ def nodes_visited(result: dict[str, Any]) -> list[str]:
 async def test_grounded_answer_cites_only_used_excerpts(wire) -> None:
     fake = wire(
         FakeLLM(
-            planner={"route": "course_question", "search_query": "3NF definition"},
-            teaching={
+            {
                 "status": "answered",
                 "answer": "3NF removes transitive dependencies [2]. See [2, 3].",
                 "cited_excerpts": [2, "3", 2, 9],
-            },
+            }
         ),
         [chunk(0.7, page=1), chunk(0.6, page=3), chunk(0.5, page=4)],
     )
@@ -85,42 +87,25 @@ async def test_grounded_answer_cites_only_used_excerpts(wire) -> None:
     # Citations are renumbered to match the returned sources list.
     assert result["answer"] == "3NF removes transitive dependencies [1]. See [1, 2]."
     assert [source.page for source in result["sources"]] == [3, 4]
-    assert nodes_visited(result) == ["planner", "retrieval", "teaching"]
-    assert fake.calls == ["Planner", "Teaching"]
+    assert nodes_visited(result) == ["retrieve", "check_relevance", "answer"]
+    assert fake.calls == ["Teaching"]  # one LLM call per answered question
 
 
-async def test_planner_routes_off_topic_question_to_refusal(wire) -> None:
-    fake = wire(FakeLLM(planner={"route": "off_topic"}), [chunk(0.9)])
+async def test_irrelevant_question_is_refused_without_any_llm_call(wire) -> None:
+    fake = wire(FakeLLM(), [chunk(0.05)])
 
     result = await run_chat({**COURSE, "question": "Who won the World Cup?"})
-
-    assert result["status"] == "out_of_scope"
-    assert "DB201" in result["answer"] and result["sources"] == []
-    assert nodes_visited(result) == ["planner", "refusal"]
-    assert fake.calls == ["Planner"]
-
-
-async def test_low_similarity_is_not_in_material_without_teaching_llm(wire) -> None:
-    fake = wire(
-        FakeLLM(planner={"route": "course_question", "search_query": "triggers"}),
-        [chunk(0.05)],
-    )
-
-    result = await run_chat({**COURSE, "question": "What is a trigger?"})
 
     assert result["status"] == "not_in_material"
     assert "couldn't find this in the course material" in result["answer"]
     assert result["sources"] == []
-    assert nodes_visited(result) == ["planner", "retrieval", "teaching"]
-    assert fake.calls == ["Planner"]
+    assert nodes_visited(result) == ["retrieve", "check_relevance", "refuse"]
+    assert fake.calls == []
 
 
 async def test_teaching_reports_insufficient_context(wire) -> None:
     wire(
-        FakeLLM(
-            planner={"route": "course_question", "search_query": "sharding"},
-            teaching={"status": "not_in_material", "answer": "", "cited_excerpts": []},
-        ),
+        FakeLLM({"status": "not_in_material", "answer": "", "cited_excerpts": []}),
         [chunk(0.45)],
     )
 
@@ -130,43 +115,46 @@ async def test_teaching_reports_insufficient_context(wire) -> None:
     assert result["sources"] == []
 
 
-async def test_teaching_off_topic_verdict_goes_to_refusal(wire) -> None:
-    wire(
-        FakeLLM(
-            planner={"route": "course_question", "search_query": "poem"},
-            teaching={"status": "off_topic", "answer": ""},
-        ),
-        [chunk(0.5)],
-    )
+async def test_matching_words_but_off_topic_request_is_refused(wire) -> None:
+    wire(FakeLLM({"status": "off_topic", "answer": ""}), [chunk(0.5)])
 
     result = await run_chat({**COURSE, "question": "Write a poem about tables"})
 
     assert result["status"] == "out_of_scope"
-    assert nodes_visited(result) == ["planner", "retrieval", "teaching", "refusal"]
+    assert "DB201" in result["answer"]
+    assert nodes_visited(result) == ["retrieve", "check_relevance", "answer", "refuse"]
 
 
-async def test_malformed_plan_falls_back_to_the_chat_path(wire) -> None:
-    wire(
+async def test_follow_up_is_searched_with_the_previous_question(wire) -> None:
+    alone, together = chunk(0.1, page=1), chunk(0.6, page=2)
+    fake = wire(
         FakeLLM(
-            planner=LLMOutputError("bad json"),
-            teaching={
-                "status": "answered",
-                "answer": "A key [1].",
-                "cited_excerpts": [],
-            },
+            {"status": "answered", "answer": "Anomalies [1].", "cited_excerpts": [1]}
         ),
-        [chunk(0.8)],
+        {0: [alone], 1: [together]},
     )
 
-    result = await run_chat({**COURSE, "question": "What is a key?"})
+    result = await run_chat(
+        {
+            **COURSE,
+            "question": "And its disadvantages?",
+            "history": [
+                {"role": "user", "content": "What is denormalization?"},
+                {"role": "assistant", "content": "It adds redundancy..."},
+            ],
+        }
+    )
 
+    # One embedding call with both queries; the follow-up alone matched nothing.
+    assert fake.embedded == [
+        ["And its disadvantages?", "What is denormalization?\nAnd its disadvantages?"]
+    ]
     assert result["status"] == "grounded"
-    assert result["search_query"] == "What is a key?"
-    assert len(result["sources"]) == 1  # uncited answers still show their context
+    assert [source.page for source in result["sources"]] == [2]
 
 
 async def test_provider_failure_propagates(wire) -> None:
-    wire(FakeLLM(planner=LLMError("timeout")), [])
+    wire(FakeLLM(LLMError("timeout")), [chunk(0.8)])
 
     with pytest.raises(LLMError):
         await run_chat({**COURSE, "question": "What is a key?"})

@@ -4,10 +4,9 @@ from typing import Annotated, Literal, TypedDict
 
 from app.rag.vector_store import RetrievedChunk
 
-Route = Literal["course_question", "off_topic"]
 # grounded: answered from retrieved material
-# not_in_material: about the course, but the uploaded material does not cover it
-# out_of_scope: unrelated to the course, politely refused
+# not_in_material: nothing in the uploaded material is relevant enough
+# out_of_scope: the material matched, but the question is not about the course
 AnswerStatus = Literal["grounded", "not_in_material", "out_of_scope"]
 
 
@@ -30,14 +29,11 @@ class ChatState(TypedDict, total=False):
     question: str
     history: list[ChatTurn]
 
-    # Planner
-    route: Route
+    # retrieve / check_relevance
     search_query: str
+    chunks: list[RetrievedChunk]  # only those above the relevance threshold
 
-    # Retrieval
-    chunks: list[RetrievedChunk]
-
-    # Teaching / Refusal
+    # answer / refuse
     status: AnswerStatus
     answer: str
     sources: list[RetrievedChunk]
