@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { AppShell, PageMessage } from "@/components/AppShell";
 import { ClassDashboard } from "@/components/ClassDashboard";
+import { InsightPanel } from "@/components/InsightPanel";
 import { StudentDashboard } from "@/components/StudentDashboard";
 import {
   ApiError,
@@ -59,6 +60,23 @@ export default function AnalyticsPage() {
           <h1 className="mt-3 mb-6 text-2xl font-semibold">
             {analytics ? "Class analytics" : "My progress"}
           </h1>
+          {token ? (
+            <div className="mb-6">
+              <InsightPanel
+                token={token}
+                courseId={courseId}
+                suggestions={
+                  analytics
+                    ? [
+                        "Which topics should I revise in class?",
+                        "Who is falling behind?",
+                        "How reliable has the AI grading been?",
+                      ]
+                    : ["What should I study next?", "Am I improving?"]
+                }
+              />
+            </div>
+          ) : null}
           {analytics ? <ClassDashboard analytics={analytics} courseId={courseId} /> : null}
           {progress ? <StudentDashboard progress={progress} courseId={courseId} viewer="student" /> : null}
         </div>

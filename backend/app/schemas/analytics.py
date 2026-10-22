@@ -6,9 +6,9 @@ measurement of the student yet.
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TopicMastery(BaseModel):
@@ -110,3 +110,32 @@ class StudentProgress(BaseModel):
     topics: list[TopicMastery]  # weakest first
     trend: list[TrendPoint]  # by deadline
     assignments: list[StudentAssignmentProgress]
+
+
+class InsightRequest(BaseModel):
+    # Empty: a default question for the viewer's role.
+    question: str = Field(default="", max_length=500)
+    # Faculty only: ask about one enrolled student instead of the class.
+    student_id: uuid.UUID | None = None
+
+
+class InsightToolCall(BaseModel):
+    tool: str
+    args: dict[str, Any]
+    result: Any
+    error: str | None
+
+
+class InsightStep(BaseModel):
+    node: str
+    detail: str
+
+
+class InsightRead(BaseModel):
+    question: str
+    # None when the agent's numbers could not be verified against the data.
+    insight: str | None
+    verified: bool
+    unsupported_numbers: list[str]
+    tool_calls: list[InsightToolCall]
+    trace: list[InsightStep]

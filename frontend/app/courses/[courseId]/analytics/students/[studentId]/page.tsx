@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AppShell, PageMessage } from "@/components/AppShell";
+import { InsightPanel } from "@/components/InsightPanel";
 import { StudentDashboard } from "@/components/StudentDashboard";
 import { ApiError, getStudentProgress, type StudentProgress } from "@/lib/api";
 import { useAuthedUser } from "@/lib/useAuthedUser";
@@ -44,6 +45,16 @@ export default function StudentProgressPage() {
             ← Class analytics
           </Link>
           <h1 className="mt-3 mb-6 text-2xl font-semibold">{progress.student_name}</h1>
+          {token ? (
+            <div className="mb-6">
+              <InsightPanel
+                token={token}
+                courseId={courseId}
+                studentId={studentId}
+                suggestions={["Where does this student need help?", "Is this student improving?"]}
+              />
+            </div>
+          ) : null}
           <StudentDashboard progress={progress} courseId={courseId} viewer="faculty" />
         </div>
       ) : null}

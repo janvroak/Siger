@@ -712,3 +712,26 @@ export function getStudentProgress(
     headers: authHeaders(token),
   });
 }
+
+export type AnalyticsInsight = {
+  question: string;
+  /** null when the agent's numbers could not be verified against the data */
+  insight: string | null;
+  verified: boolean;
+  unsupported_numbers: string[];
+  tool_calls: { tool: string; args: Record<string, unknown>; result: unknown; error: string | null }[];
+  trace: TraceStep[];
+};
+
+/** Ask the analytics agent; every number in the answer is checked against SQL results. */
+export function askAnalytics(
+  token: string,
+  courseId: string,
+  input: { question?: string; student_id?: string },
+): Promise<AnalyticsInsight> {
+  return request<AnalyticsInsight>(`/courses/${courseId}/analytics/insight`, {
+    method: "POST",
+    headers: { ...authHeaders(token), "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
