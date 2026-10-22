@@ -10,6 +10,7 @@ from app.api.routes.chat import router as chat_router
 from app.api.routes.courses import router as courses_router
 from app.api.routes.health import router as health_router
 from app.api.routes.materials import router as materials_router
+from app.api.routes.submissions import router as submissions_router
 from app.api.routes.users import router as users_router
 from app.core.config import settings
 from app.rag import vector_store
@@ -42,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(courses_router)
     app.include_router(materials_router)
     app.include_router(assignments_router)
+    app.include_router(submissions_router)
     app.include_router(chat_router)
     app.include_router(users_router)
 

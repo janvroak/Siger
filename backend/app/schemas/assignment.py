@@ -9,6 +9,8 @@ from pydantic import (
     field_validator,
 )
 
+from app.models.submission import SubmissionStatus
+
 MAX_QUESTIONS = 30
 MAX_KEY_POINTS = 5
 
@@ -83,6 +85,10 @@ class AssignmentSummary(BaseModel):
     created_at: datetime
     question_count: int
     total_marks: float
+    submission_count: int | None = None  # professors only
+    # The requesting student's submission status; None if not submitted
+    # (or when a professor lists the assignments).
+    my_status: SubmissionStatus | None = None
 
 
 class StudentAssignmentRead(BaseModel):

@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { AppShell, PageMessage } from "@/components/AppShell";
 import { AssignmentList } from "@/components/AssignmentList";
+import { OpenPdfButton } from "@/components/OpenPdfButton";
 import { courseAccent, plural } from "@/components/CourseCard";
 import { primaryButton, secondaryButton } from "@/components/Modal";
 import {
@@ -162,6 +163,7 @@ export default function CoursePage() {
               <AssignmentList
                 courseId={course.id}
                 assignments={assignments}
+                audience={isProfessor ? "faculty" : "student"}
                 emptyText={
                   isProfessor
                     ? "No assignments yet. Create one with questions and a model answer for each — submissions are graded against it."
@@ -221,7 +223,7 @@ export default function CoursePage() {
                     ) : null}
                   </div>
                   {material.has_file ? (
-                    <ViewPdfButton token={token} courseId={course.id} material={material} />
+                    <OpenPdfButton load={() => getMaterialPdf(token, course.id, material.id)} />
                   ) : null}
                 </li>
               ))}
@@ -335,54 +337,6 @@ function UploadPanel({
         </div>
       </form>
     </section>
-  );
-}
-
-function ViewPdfButton({
-  token,
-  courseId,
-  material,
-}: {
-  token: string;
-  courseId: string;
-  material: Material;
-}) {
-  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
-
-  async function open() {
-    // Open the tab synchronously, inside the click, so pop-up blockers allow it;
-    // the PDF is fetched with the bearer token and shown once it arrives.
-    const tab = window.open("", "_blank");
-    setState("loading");
-    try {
-      const blob = await getMaterialPdf(token, courseId, material.id);
-      const url = URL.createObjectURL(blob);
-      if (tab) {
-        tab.location.href = url;
-      } else {
-        window.location.href = url;
-      }
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setState("idle");
-    } catch {
-      tab?.close();
-      setState("error");
-    }
-  }
-
-  return (
-    <div className="shrink-0 text-right">
-      <button
-        className={`${secondaryButton} gap-1.5`}
-        onClick={() => void open()}
-        disabled={state === "loading"}
-      >
-        {state === "loading" ? "Opening…" : "View PDF ↗"}
-      </button>
-      {state === "error" ? (
-        <p className="mt-1 text-xs text-red-700">Could not open the PDF.</p>
-      ) : null}
-    </div>
   );
 }
 

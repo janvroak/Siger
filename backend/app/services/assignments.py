@@ -1,17 +1,20 @@
 import logging
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, null, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.assignment import Assignment, Question
 from app.models.course import Course
+from app.models.submission import Submission
 from app.models.user import User
 from app.rag import llm, vector_store
 from app.rag.llm import LLMError
 from app.rag.vector_store import VectorStoreError
 from app.schemas.assignment import AssignmentIn, AssignmentSummary, QuestionIn
+from app.services import storage
+from app.services.submissions import submission_paths
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +55,13 @@ async def replace_assignment(
 
 
 async def delete_assignment(session: AsyncSession, assignment: Assignment) -> None:
+    """Delete an assignment with its answer key and all submissions."""
     assignment_id = assignment.id
+    files = await submission_paths(session, assignment_id)
     await session.delete(assignment)
     await session.commit()
+    for path in files:
+        storage.remove(path)
     try:
         await vector_store.delete_answer_keys(assignment_id)
     except VectorStoreError:
@@ -104,17 +111,31 @@ async def get_assignment(
 
 
 async def list_assignments(
-    session: AsyncSession, course_id: uuid.UUID
+    session: AsyncSession, course_id: uuid.UUID, student_id: uuid.UUID | None = None
 ) -> list[AssignmentSummary]:
-    statement = (
-        select(
-            Assignment,
-            func.count(Question.id),
-            func.coalesce(func.sum(Question.max_marks), 0.0),
+    """A course's assignments; with student_id, each carries that student's status."""
+
+    def per_assignment(column, *conditions):
+        """A value computed per assignment row (count, sum, status)."""
+        return select(column).where(*conditions).correlate(Assignment).scalar_subquery()
+
+    of_question = Question.assignment_id == Assignment.id
+    of_submission = Submission.assignment_id == Assignment.id
+    question_count = per_assignment(func.count(Question.id), of_question)
+    total_marks = per_assignment(
+        func.coalesce(func.sum(Question.max_marks), 0.0), of_question
+    )
+    submission_count = per_assignment(func.count(Submission.id), of_submission)
+    my_status = (
+        per_assignment(
+            Submission.status, of_submission, Submission.student_id == student_id
         )
-        .outerjoin(Question, Question.assignment_id == Assignment.id)
+        if student_id
+        else null()
+    )
+    statement = (
+        select(Assignment, question_count, total_marks, submission_count, my_status)
         .where(Assignment.course_id == course_id)
-        .group_by(Assignment.id)
         .order_by(Assignment.deadline.asc(), Assignment.created_at.asc())
     )
     rows = await session.execute(statement)
@@ -125,10 +146,13 @@ async def list_assignments(
             title=assignment.title,
             deadline=assignment.deadline,
             created_at=assignment.created_at,
-            question_count=question_count,
-            total_marks=float(total_marks),
+            question_count=questions,
+            total_marks=float(marks),
+            # Students are not told how many classmates have submitted.
+            submission_count=None if student_id else submissions,
+            my_status=status,
         )
-        for assignment, question_count, total_marks in rows
+        for assignment, questions, marks, submissions, status in rows
     ]
 
 

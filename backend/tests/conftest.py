@@ -9,3 +9,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
+
+
+# Imported after the environment is set up, since importing the app reads settings.
+from tests.api_world import world  # noqa: E402, F401  (shared API fixture)

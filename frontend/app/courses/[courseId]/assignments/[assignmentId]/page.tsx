@@ -2,21 +2,25 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AppShell, PageMessage } from "@/components/AppShell";
 import { DeadlineBadge, formatDeadline } from "@/components/AssignmentList";
 import { plural } from "@/components/CourseCard";
 import { Modal, primaryButton, secondaryButton } from "@/components/Modal";
+import { RosterPanel } from "@/components/RosterPanel";
+import { SubmissionPanel } from "@/components/SubmissionPanel";
 import {
   ApiError,
   deleteAssignment,
   getAssignment,
   getAssignmentKey,
+  getRoster,
   type Assignment,
   type Question,
   type StudentAssignment,
   type StudentQuestion,
+  type SubmissionRoster,
 } from "@/lib/api";
 import { useAuthedUser } from "@/lib/useAuthedUser";
 
@@ -27,7 +31,22 @@ export default function AssignmentPage() {
   const [assignment, setAssignment] = useState<Assignment | StudentAssignment | null>(null);
   const [pageError, setPageError] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [roster, setRoster] = useState<SubmissionRoster | null>(null);
   const isProfessor = user?.role === "professor";
+
+  const loadRoster = useCallback(
+    (activeToken: string) =>
+      getRoster(activeToken, courseId, assignmentId)
+        .then(setRoster)
+        .catch(() => setRoster(null)),
+    [courseId, assignmentId],
+  );
+
+  useEffect(() => {
+    if (token && isProfessor) {
+      void loadRoster(token);
+    }
+  }, [token, isProfessor, loadRoster]);
 
   useEffect(() => {
     if (!token || !user) {
@@ -50,6 +69,8 @@ export default function AssignmentPage() {
 
   const error = authError || pageError;
   const totalMarks = assignment?.questions.reduce((sum, question) => sum + question.max_marks, 0) ?? 0;
+  // The answer key can't change once students have been graded against it.
+  const locked = (roster?.submitted ?? 0) > 0;
   const keyNotIndexed = assignment && "answer_keys_indexed" in assignment && !assignment.answer_keys_indexed;
 
   return (
@@ -75,12 +96,21 @@ export default function AssignmentPage() {
               </div>
               {isProfessor ? (
                 <div className="flex shrink-0 gap-2">
-                  <Link
-                    className={secondaryButton}
-                    href={`/courses/${courseId}/assignments/${assignmentId}/edit`}
-                  >
-                    Edit
-                  </Link>
+                  {locked ? (
+                    <span
+                      className={`${secondaryButton} cursor-not-allowed opacity-50`}
+                      title="Students have submitted, so the answer key is locked"
+                    >
+                      Edit
+                    </span>
+                  ) : (
+                    <Link
+                      className={secondaryButton}
+                      href={`/courses/${courseId}/assignments/${assignmentId}/edit`}
+                    >
+                      Edit
+                    </Link>
+                  )}
                   <button
                     className={`${secondaryButton} text-red-700 hover:bg-red-50`}
                     onClick={() => setConfirmDelete(true)}
@@ -103,7 +133,27 @@ export default function AssignmentPage() {
             ) : null}
           </section>
 
-          <ol className="mt-6 space-y-4">
+          {isProfessor ? (
+            roster ? (
+              <RosterPanel
+                token={token}
+                courseId={courseId}
+                assignmentId={assignmentId}
+                roster={roster}
+                onRefresh={() => void loadRoster(token)}
+              />
+            ) : null
+          ) : (
+            <SubmissionPanel
+              token={token}
+              courseId={courseId}
+              assignmentId={assignmentId}
+              deadline={assignment.deadline}
+            />
+          )}
+
+          <h2 className="mt-8 text-lg font-semibold">Questions</h2>
+          <ol className="mt-3 space-y-4">
             {assignment.questions.map((question) => (
               <QuestionCard key={question.id} question={question} />
             ))}
@@ -114,6 +164,7 @@ export default function AssignmentPage() {
       {confirmDelete && assignment && token ? (
         <DeleteDialog
           title={assignment.title}
+          submissions={roster?.submitted ?? 0}
           onClose={() => setConfirmDelete(false)}
           onConfirm={async () => {
             await deleteAssignment(token, courseId, assignmentId);
@@ -161,10 +212,12 @@ function QuestionCard({ question }: { question: Question | StudentQuestion }) {
 
 function DeleteDialog({
   title,
+  submissions,
   onClose,
   onConfirm,
 }: {
   title: string;
+  submissions: number;
   onClose: () => void;
   onConfirm: () => Promise<void>;
 }) {
@@ -173,7 +226,11 @@ function DeleteDialog({
   return (
     <Modal
       title="Delete assignment?"
-      description={`“${title}” and its answer key will be permanently deleted.`}
+      description={
+        submissions > 0
+          ? `“${title}”, its answer key and ${plural(submissions, "student submission")} will be permanently deleted.`
+          : `“${title}” and its answer key will be permanently deleted.`
+      }
       onClose={onClose}
     >
       {error ? <p className="mb-3 text-sm text-red-700">{error}</p> : null}

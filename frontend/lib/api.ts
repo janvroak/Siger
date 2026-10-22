@@ -105,6 +105,49 @@ export type AssignmentSummary = {
   created_at: string;
   question_count: number;
   total_marks: number;
+  /** Professors only. */
+  submission_count: number | null;
+  /** The requesting student's submission status; null if not submitted. */
+  my_status: SubmissionStatus | null;
+};
+
+export type SubmissionStatus =
+  | "submitted"
+  | "evaluating"
+  | "under_review"
+  | "published"
+  | "failed";
+
+export type Submission = {
+  id: string;
+  assignment_id: string;
+  student_id: string;
+  filename: string;
+  page_count: number;
+  status: SubmissionStatus;
+  submitted_at: string;
+  updated_at: string;
+};
+
+export type RosterState = SubmissionStatus | "not_submitted" | "overdue";
+
+export type RosterRow = {
+  student_id: string;
+  student_name: string;
+  student_email: string;
+  state: RosterState;
+  submission: Submission | null;
+  error: string | null;
+};
+
+export type SubmissionRoster = {
+  assignment_id: string;
+  deadline: string;
+  enrolled: number;
+  submitted: number;
+  pending: number;
+  overdue: number;
+  students: RosterRow[];
 };
 
 /** A question as students see it: never the answer key. */
@@ -288,21 +331,19 @@ export function uploadMaterial(
   });
 }
 
-/** Download a material's original PDF (the endpoint needs the bearer token). */
-export async function getMaterialPdf(
-  token: string,
-  courseId: string,
-  materialId: string,
-): Promise<Blob> {
-  const response = await fetch(
-    `${apiBaseUrl}/courses/${courseId}/materials/${materialId}/file`,
-    { headers: authHeaders(token) },
-  );
+/** Fetch a PDF from an endpoint that needs the bearer token. */
+async function fetchPdf(token: string, path: string): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}${path}`, { headers: authHeaders(token) });
   if (!response.ok) {
     const payload: unknown = await response.json().catch(() => null);
     throw new ApiError(errorDetail(payload), response.status);
   }
   return response.blob();
+}
+
+/** Download a material's original PDF. */
+export function getMaterialPdf(token: string, courseId: string, materialId: string): Promise<Blob> {
+  return fetchPdf(token, `/courses/${courseId}/materials/${materialId}/file`);
 }
 
 export function getConversation(token: string, courseId: string): Promise<Conversation> {
@@ -382,4 +423,61 @@ export function deleteAssignment(
     method: "DELETE",
     headers: authHeaders(token),
   });
+}
+
+export async function getMySubmission(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+): Promise<Submission | null> {
+  const result = await request<{ submission: Submission | null }>(
+    `/courses/${courseId}/assignments/${assignmentId}/submission`,
+    { headers: authHeaders(token) },
+  );
+  return result.submission;
+}
+
+export function submitAssignment(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+  file: File,
+): Promise<Submission> {
+  const body = new FormData();
+  body.append("file", file);
+  return request<Submission>(`/courses/${courseId}/assignments/${assignmentId}/submission`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body,
+  });
+}
+
+export function getMySubmissionPdf(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+): Promise<Blob> {
+  return fetchPdf(token, `/courses/${courseId}/assignments/${assignmentId}/submission/file`);
+}
+
+export function getRoster(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+): Promise<SubmissionRoster> {
+  return request<SubmissionRoster>(`/courses/${courseId}/assignments/${assignmentId}/submissions`, {
+    headers: authHeaders(token),
+  });
+}
+
+export function getSubmissionPdf(
+  token: string,
+  courseId: string,
+  assignmentId: string,
+  submissionId: string,
+): Promise<Blob> {
+  return fetchPdf(
+    token,
+    `/courses/${courseId}/assignments/${assignmentId}/submissions/${submissionId}/file`,
+  );
 }

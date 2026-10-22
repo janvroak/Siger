@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { plural } from "@/components/CourseCard";
+import { StatusBadge } from "@/components/SubmissionStatus";
 import type { AssignmentSummary } from "@/lib/api";
 
 export function formatDeadline(iso: string): string {
@@ -39,10 +40,12 @@ export function DeadlineBadge({ deadline }: { deadline: string }) {
 export function AssignmentList({
   courseId,
   assignments,
+  audience,
   emptyText,
 }: {
   courseId: string;
   assignments: AssignmentSummary[];
+  audience: "student" | "faculty";
   emptyText: string;
 }) {
   if (assignments.length === 0) {
@@ -67,10 +70,22 @@ export function AssignmentList({
               <div className="flex flex-wrap items-center gap-2">
                 <p className="truncate font-medium">{assignment.title}</p>
                 <DeadlineBadge deadline={assignment.deadline} />
+                {audience === "student" ? (
+                  <StatusBadge
+                    audience="student"
+                    state={
+                      assignment.my_status ??
+                      (deadlineLabel(assignment.deadline).closed ? "overdue" : "not_submitted")
+                    }
+                  />
+                ) : null}
               </div>
               <p className="mt-0.5 text-sm text-slate-500">
                 {plural(assignment.question_count, "question")} ·{" "}
                 {plural(assignment.total_marks, "mark")} · due {formatDeadline(assignment.deadline)}
+                {assignment.submission_count !== null
+                  ? ` · ${plural(assignment.submission_count, "submission")}`
+                  : null}
               </p>
             </div>
             <span className="text-slate-400">→</span>
