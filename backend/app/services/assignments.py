@@ -70,11 +70,14 @@ async def delete_assignment(session: AsyncSession, assignment: Assignment) -> No
         logger.warning("Could not remove answer keys of assignment %s", assignment_id)
 
 
-async def index_answer_keys(session: AsyncSession, assignment: Assignment) -> bool:
+async def index_answer_keys(
+    session: AsyncSession, assignment: Assignment, *, raise_errors: bool = False
+) -> bool:
     """Embed the model answers into the answer_keys collection.
 
-    Best effort: the assignment is already saved, and grading indexes the key
-    again if it is still missing, so a provider hiccup must not lose the work.
+    Best effort when saving: the assignment is already stored, and grading
+    indexes the key again if it is still missing, so a provider hiccup must
+    not lose the work. Grading passes raise_errors=True to report the cause.
     """
     questions = list(assignment.questions)
     try:
@@ -89,13 +92,15 @@ async def index_answer_keys(session: AsyncSession, assignment: Assignment) -> bo
         logger.warning(
             "Answer key of assignment %s not indexed: %s", assignment.id, exc
         )
-        indexed = False
-    else:
-        indexed = True
+        assignment.answer_keys_indexed = False
+        await session.commit()
+        if raise_errors:
+            raise
+        return False
 
-    assignment.answer_keys_indexed = indexed
+    assignment.answer_keys_indexed = True
     await session.commit()
-    return indexed
+    return True
 
 
 async def get_assignment(

@@ -74,13 +74,10 @@ async def _grade(submission_id: uuid.UUID) -> None:
         submission.error = None
         await session.commit()
 
-        if not assignment.answer_keys_indexed and not await index_answer_keys(
-            session, assignment
-        ):
-            raise GradingError(
-                "The answer key could not be indexed; the embedding service may "
-                "be unavailable"
-            )
+        if not assignment.answer_keys_indexed:
+            # Raises the provider's error (e.g. its rate limit) so the failure
+            # reason shown to faculty is the real one.
+            await index_answer_keys(session, assignment, raise_errors=True)
         path = storage.resolve(submission.stored_path)
         if path is None:
             raise GradingError("The submitted PDF is missing from storage")
