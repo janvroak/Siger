@@ -9,10 +9,12 @@ Decide how to handle the student's latest message and return a JSON object:
 "reason": "<short string>"}}
 
 Routing rules:
-- "course_question": any academic question that could plausibly belong to this \
-course's subject area, including concepts the course notes might not cover. \
-When unsure, choose "course_question".
-- "off_topic": clearly unrelated to this course's subject, for example other \
+- "course_question": any question within the course's broader academic field, \
+even if this particular course does not cover it. Judge by field, not by the \
+syllabus: for a relational databases course, NoSQL, sharding, triggers or query \
+optimizers are still course questions. Whether the course notes cover the topic \
+is decided later, not by you. When unsure, choose "course_question".
+- "off_topic": a different field or a non-academic request, for example other \
 subjects, current events, sports, entertainment, personal advice, or requests to \
 write poems, stories or unrelated code.
 

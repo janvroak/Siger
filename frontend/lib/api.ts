@@ -31,6 +31,16 @@ export type Course = {
   semester: string;
   created_at: string;
   professor_id: string;
+  professor_name: string;
+  student_count: number;
+  material_count: number;
+};
+
+export type CourseInput = {
+  title: string;
+  code: string;
+  description: string;
+  semester: string;
 };
 
 export type Material = {
@@ -42,11 +52,7 @@ export type Material = {
   chunk_count: number;
   error: string | null;
   created_at: string;
-};
-
-export type ChatTurn = {
-  role: "user" | "assistant";
-  content: string;
+  has_file: boolean;
 };
 
 export type ChatSource = {
@@ -60,14 +66,35 @@ export type ChatSource = {
 
 export type ChatStatus = "grounded" | "not_in_material" | "out_of_scope";
 
+export type TraceStep = { node: string; detail: string };
+
 export type ChatResponse = {
   course_id: string;
+  conversation_id: string;
+  message_id: string;
+  created_at: string;
   answer: string;
   status: ChatStatus;
   grounded: boolean;
   in_scope: boolean;
   sources: ChatSource[];
-  trace: { node: string; detail: string }[];
+  trace: TraceStep[];
+};
+
+export type StoredChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  status: ChatStatus | null;
+  sources: ChatSource[] | null;
+  trace: TraceStep[] | null;
+  created_at: string;
+};
+
+export type Conversation = {
+  course_id: string;
+  conversation_id: string | null;
+  messages: StoredChatMessage[];
 };
 
 export class ApiError extends Error {
@@ -151,6 +178,37 @@ export function getMyCourses(token: string): Promise<Course[]> {
   return request<Course[]>("/courses/my", { headers: authHeaders(token) });
 }
 
+export function getAvailableCourses(token: string): Promise<Course[]> {
+  return request<Course[]>("/courses", { headers: authHeaders(token) });
+}
+
+export function getCourse(token: string, courseId: string): Promise<Course> {
+  return request<Course>(`/courses/${courseId}`, { headers: authHeaders(token) });
+}
+
+export function createCourse(token: string, input: CourseInput): Promise<Course> {
+  return request<Course>("/courses", {
+    method: "POST",
+    headers: { ...authHeaders(token), "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export function joinCourseByCode(token: string, code: string): Promise<Course> {
+  return request<Course>("/courses/join", {
+    method: "POST",
+    headers: { ...authHeaders(token), "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+}
+
+export function enrollInCourse(token: string, courseId: string): Promise<unknown> {
+  return request<unknown>(`/courses/${courseId}/enroll`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+}
+
 export function listMaterials(token: string, courseId: string): Promise<Material[]> {
   return request<Material[]>(`/courses/${courseId}/materials`, {
     headers: authHeaders(token),
@@ -171,15 +229,35 @@ export function uploadMaterial(
   });
 }
 
+/** Download a material's original PDF (the endpoint needs the bearer token). */
+export async function getMaterialPdf(
+  token: string,
+  courseId: string,
+  materialId: string,
+): Promise<Blob> {
+  const response = await fetch(
+    `${apiBaseUrl}/courses/${courseId}/materials/${materialId}/file`,
+    { headers: authHeaders(token) },
+  );
+  if (!response.ok) {
+    const payload: unknown = await response.json().catch(() => null);
+    throw new ApiError(errorDetail(payload), response.status);
+  }
+  return response.blob();
+}
+
+export function getConversation(token: string, courseId: string): Promise<Conversation> {
+  return request<Conversation>(`/courses/${courseId}/chat`, { headers: authHeaders(token) });
+}
+
 export function sendChatMessage(
   token: string,
   courseId: string,
   question: string,
-  history: ChatTurn[],
 ): Promise<ChatResponse> {
   return request<ChatResponse>(`/courses/${courseId}/chat`, {
     method: "POST",
     headers: { ...authHeaders(token), "Content-Type": "application/json" },
-    body: JSON.stringify({ question, history }),
+    body: JSON.stringify({ question }),
   });
 }

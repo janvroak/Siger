@@ -1,15 +1,17 @@
 """Seed the Chat / Teaching demo: users, courses, enrollments and course material.
 
-Run from backend/:  uv run python -m scripts.seed_demo [--reingest]
+Run from backend/:  uv run python -m scripts.seed_demo [--reingest | --remove]
 
-Safe to run repeatedly; existing users, courses and enrollments are reused.
+Demo data exists only when this script is run explicitly; the application never
+creates it. Safe to run repeatedly; existing users, courses and enrollments are
+reused. --remove deletes everything this script creates.
 """
 
 import argparse
 import asyncio
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.db.session import AsyncSessionLocal, engine
 from app.models.course import Course
@@ -25,7 +27,7 @@ from app.services.courses import (
     get_course_by_code,
     get_enrollment,
 )
-from app.services.materials import ingest_pdf
+from app.services.materials import delete_material_file, ingest_pdf
 
 DEMO_PASSWORD = "SigerDemo123"
 DEMO_PDF = Path(__file__).resolve().parents[1] / "demo_data" / "db201_course_notes.pdf"
@@ -107,6 +109,7 @@ async def ensure_material(
     stale = [m for m in existing if reingest or m.status != MaterialStatus.READY]
     for material in stale:
         await vector_store.delete_material(material.id)
+        delete_material_file(material)
         await session.delete(material)
     await session.commit()
 
@@ -132,6 +135,42 @@ async def ensure_material(
     )
 
 
+async def remove_demo() -> None:
+    """Delete the demo accounts and the courses they own, with their material."""
+    demo_emails = [user.email for user in (PROFESSOR, STUDENT, OUTSIDER)]
+    async with AsyncSessionLocal() as session:
+        users = list(
+            await session.scalars(select(User).where(User.email.in_(demo_emails)))
+        )
+        user_ids = [user.id for user in users]
+        courses = list(
+            await session.scalars(
+                select(Course).where(Course.professor_id.in_(user_ids))
+            )
+        )
+        course_ids = [course.id for course in courses]
+        materials = list(
+            await session.scalars(
+                select(CourseMaterial).where(CourseMaterial.course_id.in_(course_ids))
+            )
+        )
+        for material in materials:
+            await vector_store.delete_material(material.id)
+            delete_material_file(material)
+
+        # Enrollments, materials and conversations go with the course/user rows
+        # through ON DELETE CASCADE.
+        await session.execute(delete(Course).where(Course.id.in_(course_ids)))
+        await session.execute(delete(User).where(User.id.in_(user_ids)))
+        await session.commit()
+
+    await engine.dispose()
+    print(
+        f"Removed {len(courses)} demo course(s) {[c.code for c in courses]}, "
+        f"{len(materials)} material(s) and {len(users)} demo account(s)."
+    )
+
+
 async def main(reingest: bool) -> None:
     async with AsyncSessionLocal() as session:
         print("Users")
@@ -154,9 +193,16 @@ async def main(reingest: bool) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--reingest",
         action="store_true",
         help="delete DB201's material and embed the demo PDF again",
     )
-    asyncio.run(main(parser.parse_args().reingest))
+    mode.add_argument(
+        "--remove",
+        action="store_true",
+        help="delete all demo accounts, courses and material",
+    )
+    args = parser.parse_args()
+    asyncio.run(remove_demo() if args.remove else main(args.reingest))

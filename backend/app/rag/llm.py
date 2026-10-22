@@ -1,4 +1,6 @@
 import json
+from contextlib import suppress
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Any
 
@@ -22,6 +24,24 @@ class LLMOutputError(LLMError):
     """The provider answered, but not with the JSON object we asked for."""
 
 
+class LLMRateLimitError(LLMError):
+    """The provider's request quota is used up (e.g. OpenRouter's free daily cap)."""
+
+    def __init__(self, message: str, retry_after: datetime | None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _rate_limited(exc: openai.RateLimitError) -> LLMRateLimitError:
+    # OpenRouter reports when the quota resets in X-RateLimit-Reset (epoch ms).
+    reset: datetime | None = None
+    body = exc.body if isinstance(exc.body, dict) else {}
+    headers = (body.get("metadata") or {}).get("headers") or {}
+    with suppress(TypeError, ValueError, OverflowError):
+        reset = datetime.fromtimestamp(int(headers["X-RateLimit-Reset"]) / 1000, UTC)
+    return LLMRateLimitError(f"Rate limit reached: {body.get('message', exc)}", reset)
+
+
 @lru_cache
 def _client() -> AsyncOpenAI:
     if settings.openrouter_api_key is None:
@@ -32,6 +52,19 @@ def _client() -> AsyncOpenAI:
         base_url=settings.openrouter_base_url,
         timeout=settings.llm_timeout_seconds,
         default_headers={"X-Title": settings.app_name},
+    )
+
+
+def describe_rate_limit(exc: LLMRateLimitError) -> str:
+    """A user-facing explanation of a quota error."""
+    if exc.retry_after is None:
+        return (
+            "The AI provider's request limit has been reached. Please try again later."
+        )
+    local = exc.retry_after.astimezone().strftime("%d %b %H:%M %Z")
+    return (
+        "The AI provider's daily request limit has been reached. "
+        f"Please try again after {local}."
     )
 
 
@@ -48,6 +81,8 @@ async def embed(texts: list[str]) -> list[list[float]]:
             response = await _client().embeddings.create(
                 model=settings.embedding_model, input=batch
             )
+        except openai.RateLimitError as exc:
+            raise _rate_limited(exc) from exc
         except openai.OpenAIError as exc:
             raise LLMError(f"Embedding request failed: {exc}") from exc
 
@@ -76,6 +111,8 @@ async def chat_json(system: str, user: str) -> dict[str, Any]:
             temperature=0,
             response_format={"type": "json_object"},
         )
+    except openai.RateLimitError as exc:
+        raise _rate_limited(exc) from exc
     except openai.OpenAIError as exc:
         raise LLMError(f"Chat completion failed: {exc}") from exc
 

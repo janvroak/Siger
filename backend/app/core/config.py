@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     # question, so the Teaching node refuses without calling the LLM.
     retrieval_min_score: float = Field(default=0.3, ge=0, le=1)
     max_upload_mb: int = Field(default=20, gt=0)
+    # Original course PDFs; served only through the authorized material endpoint.
+    upload_dir: Path = BACKEND_DIR / "uploads"
 
     @cached_property
     def sqlalchemy_database_uri(self) -> str:

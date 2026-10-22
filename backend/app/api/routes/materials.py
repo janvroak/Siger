@@ -3,19 +3,32 @@ from pathlib import PurePath
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_professor, get_current_user
 from app.core.config import settings
 from app.db.session import get_db_session
 from app.models.course import Course
+from app.models.course_material import MaterialStatus
 from app.models.user import User, UserRole
-from app.rag.llm import LLMError, LLMNotConfiguredError
+from app.rag.llm import (
+    LLMError,
+    LLMNotConfiguredError,
+    LLMRateLimitError,
+    describe_rate_limit,
+)
 from app.rag.pdf import InvalidPDFError
 from app.rag.vector_store import VectorStoreError
 from app.schemas.material import MaterialRead
 from app.services.courses import get_enrollment
-from app.services.materials import ingest_pdf, list_materials
+from app.services.materials import (
+    DuplicateMaterialError,
+    get_course_material,
+    ingest_pdf,
+    list_materials,
+    material_file,
+)
 
 router = APIRouter(prefix="/courses", tags=["course materials"])
 
@@ -66,10 +79,24 @@ async def upload_material(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from None
+    except DuplicateMaterialError as exc:
+        uploaded = exc.existing.created_at.strftime("%d %b %Y")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"“{exc.existing.filename}” is already in this course's knowledge "
+                f"base (uploaded {uploaded}). It was not added again."
+            ),
+        ) from None
     except LLMNotConfiguredError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="The embedding service is not configured",
+        ) from None
+    except LLMRateLimitError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=describe_rate_limit(exc),
         ) from None
     except LLMError:
         raise HTTPException(
@@ -93,6 +120,49 @@ async def read_materials(
     user: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db_session)],
 ) -> list[MaterialRead]:
+    course = await _course_for_member(session, course_id, user)
+    return await list_materials(session, course.id)
+
+
+@router.get(
+    "/{course_id}/materials/{material_id}/file",
+    response_class=FileResponse,
+    summary="Download the original PDF of a course material",
+)
+async def read_material_file(
+    course_id: uuid.UUID,
+    material_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db_session)],
+) -> FileResponse:
+    course = await _course_for_member(session, course_id, user)
+    material = await get_course_material(session, course.id, material_id)
+    # Students only see material that is ready, matching the course page.
+    if material is None or (
+        user.role == UserRole.STUDENT and material.status != MaterialStatus.READY
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Material not found"
+        )
+
+    path = material_file(material)
+    if path is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The original PDF is not available for this material",
+        )
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=material.filename,
+        content_disposition_type="inline",
+    )
+
+
+async def _course_for_member(
+    session: AsyncSession, course_id: uuid.UUID, user: User
+) -> Course:
+    """The course, if the user owns it (professor) or is enrolled (student)."""
     course = await session.get(Course, course_id)
     if course is None:
         raise HTTPException(
@@ -108,5 +178,4 @@ async def read_materials(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this course",
         )
-
-    return await list_materials(session, course.id)
+    return course

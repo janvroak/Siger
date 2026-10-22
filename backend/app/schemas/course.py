@@ -23,6 +23,18 @@ class CourseRead(BaseModel):
     professor_id: uuid.UUID
 
 
+class CourseSummary(CourseRead):
+    """Course with the details dashboards show on a course card."""
+
+    professor_name: str
+    student_count: int
+    material_count: int  # ready (searchable) documents
+
+
+class JoinCourseRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=50)
+
+
 class EnrollmentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
