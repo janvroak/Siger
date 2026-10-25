@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { LineChart as LineIcon } from "lucide-react";
+import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-import { pct, tableClass, tdClass, thClass, Tooltip, useWidth } from "@/components/charts/ChartParts";
+import { axisProps, ChartTooltip, pct, tableClass, tdClass, thClass } from "@/components/charts/ChartParts";
+import { EmptyState } from "@/components/ui/States";
 
 export type TrendItem = {
   assignment_id: string;
@@ -13,143 +15,77 @@ export type TrendItem = {
   score: number; // 0..1
 };
 
-const HEIGHT = 200;
-const PAD = { top: 16, right: 48, bottom: 28, left: 40 };
-const TICKS = [0, 0.25, 0.5, 0.75, 1];
-
-/** Score per assignment over time: one 2px line, ringed markers, crosshair hover. */
-export function TrendChart({ items }: { items: TrendItem[] }) {
-  const [ref, width] = useWidth<HTMLDivElement>();
-  const [hover, setHover] = useState<number | null>(null);
-
+/** Score per assignment over time: one 2px line, ringed markers, crosshair tooltip. */
+export function TrendChart({
+  items,
+  threshold,
+  height = 220,
+  compact,
+}: {
+  items: TrendItem[];
+  threshold?: number;
+  height?: number;
+  /** Sparkline-style: no axes, used on the dashboard. */
+  compact?: boolean;
+}) {
   if (items.length === 0) {
-    return <p className="text-sm text-slate-500">No published grades yet.</p>;
+    return <EmptyState compact icon={LineIcon} title="No published grades yet" body="The trend appears after the first grade is published." />;
   }
 
-  const plotWidth = Math.max(width - PAD.left - PAD.right, 1);
-  const plotHeight = HEIGHT - PAD.top - PAD.bottom;
-  const x = (i: number) =>
-    PAD.left + (items.length === 1 ? plotWidth / 2 : (i / (items.length - 1)) * plotWidth);
-  const y = (score: number) => PAD.top + (1 - score) * plotHeight;
-  const path = items.map((item, i) => `${i ? "L" : "M"}${x(i)},${y(item.score)}`).join(" ");
-  const last = items.length - 1;
-
-  function nearest(clientX: number, rectLeft: number) {
-    const px = clientX - rectLeft;
-    let best = 0;
-    items.forEach((_, i) => {
-      if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i;
-    });
-    return best;
-  }
+  const data = items.map((item) => ({ ...item, short: truncate(item.title, 16) }));
 
   return (
-    <div ref={ref} className="relative w-full">
-      {width > 0 ? (
-        <svg
-          width={width}
-          height={HEIGHT}
-          role="img"
-          aria-label="Score per assignment over time"
-          onMouseMove={(event) =>
-            setHover(nearest(event.clientX, event.currentTarget.getBoundingClientRect().left))
-          }
-          onMouseLeave={() => setHover(null)}
-        >
-          {TICKS.map((tick) => (
-            <g key={tick}>
-              <line
-                x1={PAD.left}
-                x2={PAD.left + plotWidth}
-                y1={y(tick)}
-                y2={y(tick)}
-                stroke={tick === 0 ? "var(--viz-axis)" : "var(--viz-grid)"}
-                strokeWidth={1}
-              />
-              <text
-                x={PAD.left - 8}
-                y={y(tick)}
-                textAnchor="end"
-                dominantBaseline="middle"
-                fontSize={11}
-                fill="var(--viz-text-muted)"
-              >
-                {pct(tick)}
-              </text>
-            </g>
-          ))}
-          {hover !== null ? (
-            <line
-              x1={x(hover)}
-              x2={x(hover)}
-              y1={PAD.top}
-              y2={PAD.top + plotHeight}
-              stroke="var(--viz-axis)"
-              strokeWidth={1}
-            />
-          ) : null}
-          <path
-            d={`${path} L${x(last)},${y(0)} L${x(0)},${y(0)} Z`}
-            fill="var(--viz-series-1)"
-            opacity={0.1}
+    <div style={{ height }} role="img" aria-label={`Score trend: ${items.map((i) => `${i.title} ${pct(i.score)}`).join(", ")}`}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={compact ? { top: 6, right: 6, bottom: 0, left: 6 } : { top: 10, right: 16, bottom: 0, left: -8 }}>
+          <defs>
+            <linearGradient id="trend-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="var(--viz-series-1)" stopOpacity={0.22} />
+              <stop offset="100%" stopColor="var(--viz-series-1)" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          {!compact ? <CartesianGrid vertical={false} stroke="var(--viz-grid)" /> : null}
+          <XAxis dataKey="short" hide={compact} {...axisProps} interval="preserveStartEnd" tickMargin={8} />
+          <YAxis
+            hide={compact}
+            domain={[0, 1]}
+            ticks={[0, 0.25, 0.5, 0.75, 1]}
+            tickFormatter={(v: number) => pct(v)}
+            width={44}
+            {...axisProps}
           />
-          <path
-            d={path}
-            fill="none"
+          {threshold !== undefined && !compact ? (
+            <ReferenceLine y={threshold} stroke="var(--viz-critical)" strokeDasharray="4 4" strokeOpacity={0.6} />
+          ) : null}
+          <Tooltip
+            cursor={{ stroke: "var(--viz-axis)", strokeWidth: 1 }}
+            content={({ active, payload }) => {
+              const item = active && payload?.[0]?.payload as (typeof data)[number] | undefined;
+              return item ? (
+                <ChartTooltip
+                  title={item.title}
+                  rows={[
+                    { label: "Score", value: pct(item.score, 1), color: "var(--viz-series-1)" },
+                    { label: "Marks", value: `${item.earned} / ${item.possible}` },
+                    { label: "Due", value: new Date(item.deadline).toLocaleDateString() },
+                  ]}
+                />
+              ) : null;
+            }}
+          />
+          <Area
+            type="monotone"
+            dataKey="score"
             stroke="var(--viz-series-1)"
             strokeWidth={2}
-            strokeLinejoin="round"
-            strokeLinecap="round"
+            fill="url(#trend-fill)"
+            dot={{ r: 4, fill: "var(--viz-series-1)", stroke: "var(--viz-surface)", strokeWidth: 2 }}
+            activeDot={{ r: 6, fill: "var(--viz-series-1)", stroke: "var(--viz-surface)", strokeWidth: 2 }}
+            isAnimationActive
+            animationDuration={600}
           />
-          {items.map((item, i) => (
-            <circle
-              key={item.assignment_id}
-              cx={x(i)}
-              cy={y(item.score)}
-              r={hover === i ? 5.5 : 4}
-              fill="var(--viz-series-1)"
-              stroke="var(--viz-surface)"
-              strokeWidth={2}
-            />
-          ))}
-          {/* label the endpoint only */}
-          <text
-            x={x(last) + 10}
-            y={y(items[last].score)}
-            dominantBaseline="middle"
-            fontSize={12}
-            fontWeight={600}
-            fill="var(--viz-text-primary)"
-          >
-            {pct(items[last].score)}
-          </text>
-          {items.map((item, i) => (
-            <text
-              key={`label-${item.assignment_id}`}
-              x={x(i)}
-              y={HEIGHT - 8}
-              textAnchor={items.length === 1 ? "middle" : i === 0 ? "start" : i === last ? "end" : "middle"}
-              fontSize={11}
-              fill="var(--viz-text-muted)"
-            >
-              {items.length <= 6 || i === 0 || i === last ? truncate(item.title, 18) : ""}
-            </text>
-          ))}
-        </svg>
-      ) : (
-        <div style={{ height: HEIGHT }} />
-      )}
-      {hover !== null && width > 0 ? (
-        <Tooltip x={x(hover)} y={y(items[hover].score)}>
-          <p className="font-medium">{items[hover].title}</p>
-          <p style={{ color: "var(--viz-text-secondary)" }}>
-            {pct(items[hover].score, 1)} · {items[hover].earned} of {items[hover].possible} marks
-          </p>
-          <p style={{ color: "var(--viz-text-muted)" }}>
-            due {new Date(items[hover].deadline).toLocaleDateString()}
-          </p>
-        </Tooltip>
-      ) : null}
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
 }

@@ -1,11 +1,27 @@
 "use client";
 
+import { ArrowRight, CalendarX2, Clock, Eye, RefreshCw, Send, Users } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
-import { secondaryButton } from "@/components/Modal";
+import { Avatar } from "@/components/ClassDashboard";
 import { OpenPdfButton } from "@/components/OpenPdfButton";
 import { StatusBadge } from "@/components/SubmissionStatus";
-import { getSubmissionPdf, type SubmissionRoster } from "@/lib/api";
+import { Button, buttonClass, cn } from "@/components/ui/Button";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/States";
+import { DataTable } from "@/components/ui/Table";
+import { getSubmissionPdf, type RosterRow, type SubmissionRoster } from "@/lib/api";
+
+const STATE_ORDER: Record<RosterRow["state"], number> = {
+  under_review: 0,
+  failed: 1,
+  evaluating: 2,
+  submitted: 3,
+  overdue: 4,
+  not_submitted: 5,
+  published: 6,
+};
 
 /** Faculty view: who has submitted, who hasn't, and who missed the deadline. */
 export function RosterPanel({
@@ -21,109 +37,150 @@ export function RosterPanel({
   roster: SubmissionRoster;
   onRefresh: () => void;
 }) {
-  const completion = roster.enrolled ? Math.round((roster.submitted / roster.enrolled) * 100) : 0;
+  const [refreshing, setRefreshing] = useState(false);
+  const completion = roster.enrolled ? roster.submitted / roster.enrolled : 0;
+  const toReview = roster.students.filter((row) => row.state === "under_review").length;
+
   const tiles = [
-    { label: "Enrolled", value: roster.enrolled },
-    { label: "Submitted", value: roster.submitted, note: `${completion}%` },
-    { label: "Pending", value: roster.pending },
-    { label: "Overdue", value: roster.overdue, alert: roster.overdue > 0 },
+    { label: "Enrolled", value: roster.enrolled, icon: Users },
+    { label: "Submitted", value: roster.submitted, icon: Send, note: `${Math.round(completion * 100)}%` },
+    { label: "To review", value: toReview, icon: Eye, tone: toReview ? "text-warning" : "" },
+    { label: "Pending", value: roster.pending, icon: Clock },
+    { label: "Overdue", value: roster.overdue, icon: CalendarX2, tone: roster.overdue ? "text-danger" : "" },
   ];
 
   return (
-    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Submissions</h2>
-        <button className={secondaryButton} onClick={onRefresh}>
-          Refresh
-        </button>
+    <Card padded={false} className="mt-6">
+      <div className="p-5 sm:p-6">
+        <CardHeader
+          title="Submissions"
+          description="Open a submission to review the AI grade before publishing it."
+          action={
+            <Button
+              size="sm"
+              icon={RefreshCw}
+              loading={refreshing}
+              onClick={() => {
+                setRefreshing(true);
+                onRefresh();
+                setTimeout(() => setRefreshing(false), 600);
+              }}
+            >
+              Refresh
+            </Button>
+          }
+        />
+        <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-5">
+          {tiles.map((tile) => (
+            <div key={tile.label} className="bg-surface px-4 py-3">
+              <dt className="flex items-center gap-1.5 text-xs text-muted">
+                <tile.icon size={13} aria-hidden />
+                {tile.label}
+              </dt>
+              <dd className={cn("mt-1 font-display text-2xl font-bold text-fg tabular-nums", tile.tone)}>
+                {tile.value}
+                {tile.note ? <span className="ml-1.5 font-sans text-xs font-medium text-muted">{tile.note}</span> : null}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[var(--viz-track)]" aria-hidden>
+          <div className="h-full rounded-full bg-[var(--viz-series-1)] transition-[width] duration-500" style={{ width: `${completion * 100}%` }} />
+        </div>
       </div>
 
-      <dl className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        {tiles.map((tile) => (
-          <div key={tile.label} className="rounded-xl bg-slate-50 p-4">
-            <dt className="text-xs text-slate-500">{tile.label}</dt>
-            <dd
-              className={`mt-1 text-2xl font-semibold tabular-nums ${tile.alert ? "text-red-700" : ""}`}
-            >
-              {tile.value}
-              {tile.note ? (
-                <span className="ml-2 text-sm font-normal text-slate-500">{tile.note}</span>
-              ) : null}
-            </dd>
-          </div>
-        ))}
-      </dl>
-
       {roster.students.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-500">
-          No students are enrolled yet. Share the course code so they can join.
-        </p>
+        <div className="px-6 pb-6">
+          <EmptyState compact icon={Users} title="No students enrolled yet" body="Share the course code so they can join." />
+        </div>
       ) : (
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs text-slate-500">
-              <tr className="border-b border-slate-200">
-                <th className="py-2 pr-4 font-medium">Student</th>
-                <th className="py-2 pr-4 font-medium">Status</th>
-                <th className="py-2 pr-4 font-medium">Submitted</th>
-                <th className="py-2 pr-4 font-medium">Marks</th>
-                <th className="py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {roster.students.map((row) => (
-                <tr key={row.student_id}>
-                  <td className="py-3 pr-4">
-                    <p className="font-medium">{row.student_name}</p>
-                    <p className="text-xs text-slate-500">{row.student_email}</p>
-                  </td>
-                  <td className="py-3 pr-4">
+        <div className="border-t border-line">
+          <DataTable<RosterRow>
+            caption="Submissions"
+            rows={roster.students}
+            rowKey={(row) => row.student_id}
+            rowClassName={(row) => (row.state === "under_review" ? "bg-warning-soft/40" : undefined)}
+            columns={[
+              {
+                key: "student",
+                header: "Student",
+                sortValue: (row) => row.student_name.toLowerCase(),
+                cell: (row) => (
+                  <div className="flex items-center gap-3">
+                    <Avatar name={row.student_name} />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-fg">{row.student_name}</p>
+                      <p className="truncate text-xs text-muted">{row.student_email}</p>
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                sortValue: (row) => STATE_ORDER[row.state],
+                cell: (row) => (
+                  <div>
                     <StatusBadge audience="faculty" state={row.state} />
-                    {row.error ? (
-                      <p className="mt-1 max-w-xs text-xs text-red-700">{row.error}</p>
-                    ) : null}
-                  </td>
-                  <td className="py-3 pr-4 text-slate-500">
+                    {row.error ? <p className="mt-1 max-w-xs text-xs text-danger">{row.error}</p> : null}
+                  </div>
+                ),
+              },
+              {
+                key: "submitted",
+                header: "Submitted",
+                sortValue: (row) => row.submission?.submitted_at ?? null,
+                cell: (row) => (
+                  <span className="whitespace-nowrap text-muted tabular-nums">
                     {row.submission ? new Date(row.submission.submitted_at).toLocaleString() : "—"}
-                  </td>
-                  <td className="py-3 pr-4 tabular-nums">
-                    {row.final_marks !== null ? (
-                      <span className="font-medium">
-                        {row.final_marks}
-                        <span className="font-normal text-slate-500"> / {roster.total_marks}</span>
-                      </span>
-                    ) : row.ai_marks !== null ? (
-                      <span className="text-slate-500">
-                        AI {row.ai_marks} / {roster.total_marks}
-                      </span>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
-                  <td className="py-3 text-right">
-                    {row.submission ? (
-                      <span className="inline-flex items-start gap-2">
-                        <OpenPdfButton
-                          label="PDF ↗"
-                          load={() =>
-                            getSubmissionPdf(token, courseId, assignmentId, row.submission!.id)
-                          }
-                        />
-                        <Link
-                          className={secondaryButton}
-                          href={`/courses/${courseId}/assignments/${assignmentId}/submissions/${row.submission.id}`}
-                        >
-                          {row.state === "under_review" ? "Review →" : "Open →"}
-                        </Link>
-                      </span>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </span>
+                ),
+              },
+              {
+                key: "marks",
+                header: "Marks",
+                align: "right",
+                sortValue: (row) => row.final_marks ?? row.ai_marks,
+                cell: (row) =>
+                  row.final_marks !== null ? (
+                    <span className="font-semibold text-fg tabular-nums">
+                      {row.final_marks}
+                      <span className="font-normal text-muted"> / {roster.total_marks}</span>
+                    </span>
+                  ) : row.ai_marks !== null ? (
+                    <span className="text-muted tabular-nums">
+                      AI {row.ai_marks} / {roster.total_marks}
+                    </span>
+                  ) : (
+                    <span className="text-subtle">—</span>
+                  ),
+              },
+              {
+                key: "actions",
+                header: <span className="sr-only">Actions</span>,
+                align: "right",
+                cell: (row) =>
+                  row.submission ? (
+                    <span className="inline-flex items-center justify-end gap-2">
+                      <OpenPdfButton
+                        label="PDF"
+                        className={buttonClass("ghost", "sm")}
+                        load={() => getSubmissionPdf(token, courseId, assignmentId, row.submission!.id)}
+                      />
+                      <Link
+                        className={buttonClass(row.state === "under_review" ? "primary" : "secondary", "sm")}
+                        href={`/courses/${courseId}/assignments/${assignmentId}/submissions/${row.submission.id}`}
+                      >
+                        {row.state === "under_review" ? "Review" : "Open"}
+                        <ArrowRight size={14} aria-hidden />
+                      </Link>
+                    </span>
+                  ) : null,
+              },
+            ]}
+          />
         </div>
       )}
-    </section>
+    </Card>
   );
 }

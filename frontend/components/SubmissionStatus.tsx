@@ -1,14 +1,25 @@
+import {
+  AlertOctagon,
+  CheckCircle2,
+  CircleDashed,
+  Clock,
+  Eye,
+  Send,
+  XCircle,
+  type LucideIcon,
+} from "lucide-react";
+
+import { Badge, type Tone } from "@/components/ui/Badge";
 import type { RosterState } from "@/lib/api";
 
-// Literal class names so Tailwind can see them at build time.
-const STYLE: Record<RosterState, string> = {
-  not_submitted: "border-slate-200 bg-slate-50 text-slate-600",
-  overdue: "border-red-200 bg-red-50 text-red-700",
-  submitted: "border-sky-200 bg-sky-50 text-sky-700",
-  evaluating: "border-violet-200 bg-violet-50 text-violet-700",
-  under_review: "border-amber-200 bg-amber-50 text-amber-800",
-  published: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  failed: "border-red-200 bg-red-50 text-red-700",
+const STYLE: Record<RosterState, { tone: Tone; icon: LucideIcon; pulse?: boolean }> = {
+  not_submitted: { tone: "neutral", icon: CircleDashed },
+  overdue: { tone: "danger", icon: XCircle },
+  submitted: { tone: "info", icon: Send },
+  evaluating: { tone: "accent", icon: Clock, pulse: true },
+  under_review: { tone: "warning", icon: Eye },
+  published: { tone: "success", icon: CheckCircle2 },
+  failed: { tone: "danger", icon: AlertOctagon },
 };
 
 /** Faculty wording. */
@@ -46,9 +57,10 @@ export function StatusBadge({
       ? "evaluating"
       : state;
   const label = (audience === "student" ? STUDENT_LABEL : FACULTY_LABEL)[state];
+  const style = STYLE[shown];
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${STYLE[shown]}`}>
+    <Badge tone={style.tone} icon={style.icon} pulse={style.pulse}>
       {label}
-    </span>
+    </Badge>
   );
 }

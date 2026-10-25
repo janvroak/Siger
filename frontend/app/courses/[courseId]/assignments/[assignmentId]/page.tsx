@@ -1,5 +1,6 @@
 "use client";
 
+import { Lock, Pencil, Trash2, EyeOff, Hash } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -7,7 +8,11 @@ import { useCallback, useEffect, useState } from "react";
 import { AppShell, PageMessage } from "@/components/AppShell";
 import { DeadlineBadge, formatDeadline } from "@/components/AssignmentList";
 import { plural } from "@/components/CourseCard";
-import { Modal, primaryButton, secondaryButton } from "@/components/Modal";
+import { Modal } from "@/components/Modal";
+import { Tag } from "@/components/ui/Badge";
+import { Button, buttonClass } from "@/components/ui/Button";
+import { Card, Page, PageHeader } from "@/components/ui/Card";
+import { Callout } from "@/components/ui/States";
 import { RosterPanel } from "@/components/RosterPanel";
 import { SubmissionPanel } from "@/components/SubmissionPanel";
 import {
@@ -91,59 +96,50 @@ export default function AssignmentPage() {
       {!assignment && !error ? <PageMessage>Loading assignment…</PageMessage> : null}
 
       {assignment && token ? (
-        <div className="mx-auto w-full max-w-4xl px-6 py-8">
-          <Link className="text-sm text-slate-500 hover:text-slate-800" href={`/courses/${courseId}`}>
-            ← Course
-          </Link>
-
-          <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div className="min-w-0">
-                <DeadlineBadge deadline={assignment.deadline} />
-                <h1 className="mt-2 text-2xl font-semibold">{assignment.title}</h1>
-                <p className="mt-1 text-sm text-slate-500">
-                  Due {formatDeadline(assignment.deadline)} ·{" "}
-                  {plural(assignment.questions.length, "question")} · {plural(totalMarks, "mark")}
-                </p>
-              </div>
-              {isProfessor ? (
-                <div className="flex shrink-0 gap-2">
+        <Page>
+          <PageHeader
+            back={{ href: `/courses/${courseId}`, label: "Back to course" }}
+            eyebrow={<DeadlineBadge deadline={assignment.deadline} />}
+            title={assignment.title}
+            description={`Due ${formatDeadline(assignment.deadline)} · ${plural(assignment.questions.length, "question")} · ${plural(totalMarks, "mark")}`}
+            actions={
+              isProfessor ? (
+                <>
                   {locked ? (
                     <span
-                      className={`${secondaryButton} cursor-not-allowed opacity-50`}
+                      className={buttonClass("secondary")}
+                      aria-disabled="true"
                       title="Students have submitted, so the answer key is locked"
                     >
-                      Edit
+                      <Lock size={15} aria-hidden />
+                      Edit locked
                     </span>
                   ) : (
-                    <Link
-                      className={secondaryButton}
-                      href={`/courses/${courseId}/assignments/${assignmentId}/edit`}
-                    >
+                    <Link className={buttonClass("secondary")} href={`/courses/${courseId}/assignments/${assignmentId}/edit`}>
+                      <Pencil size={15} aria-hidden />
                       Edit
                     </Link>
                   )}
-                  <button
-                    className={`${secondaryButton} text-red-700 hover:bg-red-50`}
-                    onClick={() => setConfirmDelete(true)}
-                  >
+                  <Button variant="danger-ghost" icon={Trash2} onClick={() => setConfirmDelete(true)}>
                     Delete
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            {assignment.instructions ? (
-              <p className="mt-4 whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-sm text-slate-700">
-                {assignment.instructions}
-              </p>
-            ) : null}
-            {keyNotIndexed ? (
-              <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                The answer key is saved but not yet indexed for similarity checks (the embedding
-                service was unavailable). It will be indexed automatically when grading starts.
-              </p>
-            ) : null}
-          </section>
+                  </Button>
+                </>
+              ) : null
+            }
+          />
+
+          {assignment.instructions ? (
+            <Card className="bg-surface-2/60 shadow-none">
+              <p className="text-xs font-semibold text-muted">Instructions</p>
+              <p className="mt-1.5 text-sm leading-relaxed whitespace-pre-wrap text-fg">{assignment.instructions}</p>
+            </Card>
+          ) : null}
+          {keyNotIndexed ? (
+            <Callout tone="warning" className="mt-4">
+              The answer key is saved but not yet indexed for similarity checks (the embedding service was
+              unavailable). It will be indexed automatically when grading starts.
+            </Callout>
+          ) : null}
 
           {isProfessor ? (
             roster ? (
@@ -164,13 +160,18 @@ export default function AssignmentPage() {
             />
           )}
 
-          <h2 className="mt-8 text-lg font-semibold">Questions</h2>
-          <ol className="mt-3 space-y-4">
+          <h2 className="mt-10 mb-3 flex items-center gap-2 text-base font-semibold text-fg">
+            Questions
+            <span className="rounded-md bg-surface-3 px-1.5 py-0.5 font-sans text-xs font-medium text-muted tabular-nums">
+              {assignment.questions.length}
+            </span>
+          </h2>
+          <ol className="space-y-3">
             {assignment.questions.map((question) => (
               <QuestionCard key={question.id} question={question} />
             ))}
           </ol>
-        </div>
+        </Page>
       ) : null}
 
       {confirmDelete && assignment && token ? (
@@ -191,34 +192,40 @@ export default function AssignmentPage() {
 function QuestionCard({ question }: { question: Question | StudentQuestion }) {
   const key = "model_answer" in question ? question : null;
   return (
-    <li className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex items-center justify-between gap-3 text-sm">
+    <Card as="li" className="p-5 sm:p-5">
+      <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="font-semibold">Q{question.position}</span>
-          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-            {question.topic}
+          <span className="flex h-7 min-w-7 items-center justify-center rounded-md bg-surface-2 px-1.5 font-display text-xs font-bold text-fg">
+            Q{question.position}
           </span>
+          <Tag>{question.topic}</Tag>
         </div>
-        <span className="text-slate-500">{plural(question.max_marks, "mark")}</span>
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-muted tabular-nums">
+          <Hash size={12} aria-hidden />
+          {plural(question.max_marks, "mark")}
+        </span>
       </div>
-      <p className="mt-3 whitespace-pre-wrap">{question.text}</p>
+      <p className="mt-3 text-sm leading-relaxed whitespace-pre-wrap text-fg">{question.text}</p>
 
       {key ? (
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-4 text-sm">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+        <div className="mt-4 rounded-lg border border-warning-line bg-warning-soft/60 p-4 text-sm">
+          <p className="flex items-center gap-1.5 text-xs font-semibold text-warning">
+            <EyeOff size={13} aria-hidden />
             Answer key · hidden from students
           </p>
-          <p className="mt-2 whitespace-pre-wrap text-slate-800">{key.model_answer}</p>
+          <p className="mt-2 leading-relaxed whitespace-pre-wrap text-fg">{key.model_answer}</p>
           {key.key_points.length > 0 ? (
-            <ul className="mt-3 list-disc space-y-1 pl-5 text-slate-700">
+            <ul className="mt-3 flex flex-wrap gap-1.5">
               {key.key_points.map((point) => (
-                <li key={point}>{point}</li>
+                <li key={point} className="rounded-md border border-warning-line bg-surface px-2 py-1 text-xs text-fg">
+                  {point}
+                </li>
               ))}
             </ul>
           ) : null}
         </div>
       ) : null}
-    </li>
+    </Card>
   );
 }
 
@@ -245,14 +252,15 @@ function DeleteDialog({
       }
       onClose={onClose}
     >
-      {error ? <p className="mb-3 text-sm text-red-700">{error}</p> : null}
+      {error ? <Callout tone="danger" className="mb-4">{error}</Callout> : null}
       <div className="flex justify-end gap-2">
-        <button className={secondaryButton} onClick={onClose} disabled={busy}>
+        <Button onClick={onClose} disabled={busy}>
           Cancel
-        </button>
-        <button
-          className={`${primaryButton} bg-red-600 hover:bg-red-700`}
-          disabled={busy}
+        </Button>
+        <Button
+          variant="danger"
+          icon={Trash2}
+          loading={busy}
           onClick={async () => {
             setBusy(true);
             try {
@@ -264,7 +272,7 @@ function DeleteDialog({
           }}
         >
           {busy ? "Deleting…" : "Delete"}
-        </button>
+        </Button>
       </div>
     </Modal>
   );

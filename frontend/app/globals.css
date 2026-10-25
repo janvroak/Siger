@@ -1,28 +1,215 @@
 @import "tailwindcss";
 
-:root {
-  --background: #f8fafc;
-  --foreground: #1f2937;
+/* Dark mode follows data-theme on <html> (set before paint by the script in layout.tsx). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-  /* Chart roles (data-viz palette, validated against the white card surface). */
-  --viz-surface: #ffffff;
-  --viz-series-1: #2a78d6; /* the single data series: mastery, scores, submitted */
-  --viz-track: #e1e0d9; /* the unfilled remainder (pending) */
-  --viz-critical: #d03b3b; /* status: overdue / learning gap (always with icon + label) */
-  --viz-grid: #e1e0d9;
-  --viz-axis: #c3c2b7;
-  --viz-text-primary: #0b0b0b;
-  --viz-text-secondary: #52514e;
-  --viz-text-muted: #898781;
+/*
+ * Design tokens. Components use the Tailwind names below (bg-surface, text-muted,
+ * border-line, bg-accent…), so light and dark mode come from these values alone.
+ */
+:root {
+  color-scheme: light;
+
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --surface-2: #f2f4f5; /* inset areas, table headers, hover */
+  --surface-3: #e9ecee;
+  --line: #e3e6e9;
+  --line-strong: #cfd4d9;
+  --fg: #0f1720;
+  --muted: #56606b; /* 6.4:1 on white */
+  --subtle: #8a939c; /* icons and placeholders only */
+
+  --accent: #0f766e; /* deep teal; white text 5.5:1 */
+  --accent-hover: #0c625b;
+  --accent-fg: #ffffff;
+  --accent-text: #0f766e;
+  --accent-soft: #e7f4f2;
+  --accent-line: #b5ddd8;
+
+  --success: #15803d;
+  --success-soft: #ecf7ef;
+  --success-line: #bfe3c9;
+  --warning: #b45309;
+  --warning-soft: #fdf5e7;
+  --warning-line: #f3d8a8;
+  --danger: #b91c1c;
+  --danger-soft: #fdf0f0;
+  --danger-line: #f4c7c7;
+  --info: #1d4ed8;
+  --info-soft: #eef3fd;
+  --info-line: #c6d5f6;
+
+  --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.05);
+  --shadow-md: 0 1px 2px rgb(16 24 40 / 0.04), 0 4px 12px -2px rgb(16 24 40 / 0.08);
+  --shadow-lg: 0 2px 4px rgb(16 24 40 / 0.04), 0 12px 32px -8px rgb(16 24 40 / 0.16);
+
+  /* Chart roles (validated: accent vs critical pass CVD + contrast checks). */
+  --viz-surface: var(--surface);
+  --viz-series-1: #008b7d;
+  --viz-track: #e6e9ec;
+  --viz-critical: #d03b3b;
+  --viz-grid: #edf0f2;
+  --viz-axis: #cfd4d9;
+  --viz-text-primary: var(--fg);
+  --viz-text-secondary: var(--muted);
+  --viz-text-muted: #7b848d;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0b0e11;
+  --surface: #12161a;
+  --surface-2: #181d22;
+  --surface-3: #20262c;
+  --line: #242a30;
+  --line-strong: #323a42;
+  --fg: #e8ecef;
+  --muted: #9aa4ad;
+  --subtle: #6b747c;
+
+  --accent: #2dd4bf;
+  --accent-hover: #5eead4;
+  --accent-fg: #042f2e;
+  --accent-text: #5eead4;
+  --accent-soft: #0f2a28;
+  --accent-line: #1d4d48;
+
+  --success: #4ade80;
+  --success-soft: #10241a;
+  --success-line: #1e4a31;
+  --warning: #fbbf24;
+  --warning-soft: #2a2010;
+  --warning-line: #4f3d17;
+  --danger: #f87171;
+  --danger-soft: #2c1414;
+  --danger-line: #5a2424;
+  --info: #93b4fb;
+  --info-soft: #131d33;
+  --info-line: #26375e;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px -2px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 2px 4px rgb(0 0 0 / 0.3), 0 12px 32px -8px rgb(0 0 0 / 0.6);
+
+  --viz-series-1: #26a69a;
+  --viz-track: #262d33;
+  --viz-critical: #e5534b;
+  --viz-grid: #1e2429;
+  --viz-axis: #323a42;
+  --viz-text-muted: #7e8891;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-manrope), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-text: var(--accent-text);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-success-line: var(--success-line);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-warning-line: var(--warning-line);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-line: var(--danger-line);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-line: var(--info-line);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --animate-fade-in: fade-in 180ms ease-out;
+  --animate-pop-in: pop-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  --animate-slide-in: slide-in 200ms ease-out;
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+  --animate-pulse-ring: pulse-ring 1.6s ease-out infinite;
+  --animate-indeterminate: indeterminate 1.2s ease-in-out infinite;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes slide-in {
+  from { transform: translateX(-100%); }
+  to { transform: none; }
+}
+@keyframes shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+@keyframes indeterminate {
+  0% { left: -35%; }
+  100% { left: 100%; }
+}
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  100% { box-shadow: 0 0 0 8px transparent; }
+}
+
+@layer base {
+  html {
+    background: var(--bg);
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.015em;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  /* Native controls (date pickers, scrollbars) follow the theme. */
+  input, textarea, select {
+    color-scheme: inherit;
+  }
+  details > summary {
+    list-style: none;
+  }
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }

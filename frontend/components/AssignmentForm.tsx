@@ -1,8 +1,12 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { ArrowDown, ArrowUp, CalendarClock, EyeOff, Plus, Save, Trash2, X } from "lucide-react";
+import { FormEvent, KeyboardEvent, useState } from "react";
 
-import { inputClass, primaryButton, secondaryButton } from "@/components/Modal";
+import { Button, IconButton, cn } from "@/components/ui/Button";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { Field, inputClass } from "@/components/ui/Field";
+import { Callout } from "@/components/ui/States";
 import { ApiError, type Assignment, type AssignmentInput } from "@/lib/api";
 
 const MAX_KEY_POINTS = 5;
@@ -117,22 +121,20 @@ export function AssignmentForm({ initial, submitLabel, onSubmit, onCancel }: Ass
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold">Details</h2>
-        <div className="mt-4 grid gap-4 md:grid-cols-[1fr_16rem]">
-          <label className="block text-sm font-medium">
-            Title
+      <Card>
+        <CardHeader title="Details" description="What students see at the top of the assignment." />
+        <div className="mt-5 grid gap-4 md:grid-cols-[1fr_16rem]">
+          <Field label="Title">
             <input
               className={inputClass}
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               maxLength={255}
-              placeholder="e.g. Assignment 2 — Normalization"
+              placeholder="e.g. Assignment 2: Normalization"
               required
             />
-          </label>
-          <label className="block text-sm font-medium">
-            Deadline
+          </Field>
+          <Field label={<span className="inline-flex items-center gap-1.5"><CalendarClock size={14} className="text-muted" aria-hidden />Deadline</span>}>
             <input
               className={inputClass}
               type="datetime-local"
@@ -140,10 +142,9 @@ export function AssignmentForm({ initial, submitLabel, onSubmit, onCancel }: Ass
               onChange={(event) => setDeadline(event.target.value)}
               required
             />
-          </label>
+          </Field>
         </div>
-        <label className="mt-4 block text-sm font-medium">
-          Instructions for students <span className="font-normal text-slate-400">(optional)</span>
+        <Field className="mt-4" label={<>Instructions for students <span className="font-normal text-muted">(optional)</span></>}>
           <textarea
             className={`${inputClass} min-h-20`}
             value={instructions}
@@ -151,213 +152,218 @@ export function AssignmentForm({ initial, submitLabel, onSubmit, onCancel }: Ass
             maxLength={5000}
             placeholder="e.g. Label each answer with its question number (Q1, Q2…) and upload one PDF."
           />
-        </label>
-      </section>
+        </Field>
+      </Card>
 
-      <div className="flex items-end justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-3 pt-2">
         <div>
-          <h2 className="text-lg font-semibold">Questions and answer key</h2>
-          <p className="text-sm text-slate-500">
-            Students only ever see the question text, marks and topic. The model answer and key
-            points are used for AI grading and stay private.
+          <h2 className="text-base font-semibold text-fg">Questions and answer key</h2>
+          <p className="mt-0.5 max-w-2xl text-sm text-muted">
+            Students only ever see the question text, marks and topic. The model answer and key points are used for AI
+            grading and stay private.
           </p>
         </div>
-        <p className="shrink-0 text-sm text-slate-500">
-          Total: <span className="font-semibold text-slate-800">{totalMarks}</span> marks
+        <p className="shrink-0 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm text-muted">
+          {questions.length} {questions.length === 1 ? "question" : "questions"} ·{" "}
+          <span className="font-semibold text-fg tabular-nums">{totalMarks}</span> marks
         </p>
       </div>
 
-      {questions.map((question, index) => (
-        <section
-          key={question.key}
-          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-        >
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Question {index + 1}</h3>
-            <div className="flex gap-1 text-sm">
-              <IconButton label="Move up" disabled={index === 0} onClick={() => move(index, -1)}>
-                ↑
-              </IconButton>
-              <IconButton
-                label="Move down"
-                disabled={index === questions.length - 1}
-                onClick={() => move(index, 1)}
-              >
-                ↓
-              </IconButton>
-              <IconButton
-                label="Remove question"
-                disabled={questions.length === 1}
-                onClick={() =>
-                  setQuestions((current) => current.filter((item) => item.key !== question.key))
-                }
-              >
-                ✕
-              </IconButton>
+      <ol className="space-y-4">
+        {questions.map((question, index) => (
+          <li key={question.key} className="animate-fade-in rounded-xl border border-line bg-surface shadow-sm">
+            <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-fg">
+                <span className="flex h-7 min-w-7 items-center justify-center rounded-md bg-accent-soft px-1.5 font-display text-xs font-bold text-accent-text">
+                  Q{index + 1}
+                </span>
+                {question.topic.trim() ? <span className="truncate font-normal text-muted">{question.topic}</span> : null}
+              </h3>
+              <div className="flex gap-0.5">
+                <IconButton icon={ArrowUp} size="sm" label="Move up" disabled={index === 0} onClick={() => move(index, -1)} />
+                <IconButton
+                  icon={ArrowDown}
+                  size="sm"
+                  label="Move down"
+                  disabled={index === questions.length - 1}
+                  onClick={() => move(index, 1)}
+                />
+                <IconButton
+                  icon={Trash2}
+                  size="sm"
+                  variant="danger-ghost"
+                  label="Remove question"
+                  disabled={questions.length === 1}
+                  onClick={() => setQuestions((current) => current.filter((item) => item.key !== question.key))}
+                />
+              </div>
             </div>
-          </div>
 
-          <label className="mt-4 block text-sm font-medium">
-            Question
-            <textarea
-              className={`${inputClass} min-h-20`}
-              value={question.text}
-              onChange={(event) => update(question.key, { text: event.target.value })}
-              maxLength={5000}
-              required
-            />
-          </label>
+            <div className="space-y-4 p-5">
+              <Field label="Question">
+                <textarea
+                  className={`${inputClass} min-h-20`}
+                  value={question.text}
+                  onChange={(event) => update(question.key, { text: event.target.value })}
+                  maxLength={5000}
+                  required
+                />
+              </Field>
 
-          <div className="mt-4 grid gap-4 md:grid-cols-[1fr_8rem]">
-            <label className="block text-sm font-medium">
-              Topic
-              <input
-                className={inputClass}
-                value={question.topic}
-                onChange={(event) => update(question.key, { topic: event.target.value })}
-                maxLength={100}
-                placeholder="e.g. Normalization"
-                list="topic-suggestions"
-                required
-              />
-            </label>
-            <label className="block text-sm font-medium">
-              Max marks
-              <input
-                className={inputClass}
-                type="number"
-                min="0.5"
-                max="100"
-                step="0.5"
-                value={question.max_marks}
-                onChange={(event) => update(question.key, { max_marks: event.target.value })}
-                required
-              />
-            </label>
-          </div>
-
-          <label className="mt-4 block text-sm font-medium">
-            Model answer <PrivateBadge />
-            <textarea
-              className={`${inputClass} min-h-28 bg-amber-50/40`}
-              value={question.model_answer}
-              onChange={(event) => update(question.key, { model_answer: event.target.value })}
-              maxLength={10000}
-              placeholder="The answer you would give full marks to."
-              required
-            />
-          </label>
-
-          <div className="mt-4">
-            <p className="text-sm font-medium">
-              Key points <PrivateBadge />{" "}
-              <span className="font-normal text-slate-400">
-                (optional, up to {MAX_KEY_POINTS} — what a full-marks answer must contain)
-              </span>
-            </p>
-            <div className="mt-1 space-y-2">
-              {question.key_points.map((point, pointIndex) => (
-                <div key={pointIndex} className="flex gap-2">
+              <div className="grid gap-4 md:grid-cols-[1fr_9rem]">
+                <Field label="Topic" hint="Used for topic mastery and learning gaps.">
                   <input
-                    className={`${inputClass} mt-0 bg-amber-50/40`}
-                    value={point}
-                    maxLength={500}
-                    onChange={(event) =>
-                      update(question.key, {
-                        key_points: question.key_points.map((item, i) =>
-                          i === pointIndex ? event.target.value : item,
-                        ),
-                      })
-                    }
-                    placeholder={`Key point ${pointIndex + 1}`}
+                    className={inputClass}
+                    value={question.topic}
+                    onChange={(event) => update(question.key, { topic: event.target.value })}
+                    maxLength={100}
+                    placeholder="e.g. Normalization"
+                    list="topic-suggestions"
+                    required
                   />
-                  <IconButton
-                    label="Remove key point"
-                    onClick={() =>
-                      update(question.key, {
-                        key_points: question.key_points.filter((_, i) => i !== pointIndex),
-                      })
-                    }
-                  >
-                    ✕
-                  </IconButton>
-                </div>
-              ))}
+                </Field>
+                <Field label="Max marks">
+                  <input
+                    className={`${inputClass} tabular-nums`}
+                    type="number"
+                    min="0.5"
+                    max="100"
+                    step="0.5"
+                    value={question.max_marks}
+                    onChange={(event) => update(question.key, { max_marks: event.target.value })}
+                    required
+                  />
+                </Field>
+              </div>
+
+              <div className="rounded-lg border border-warning-line bg-warning-soft/40 p-4">
+                <p className="mb-3 flex items-center gap-1.5 text-xs font-semibold text-warning">
+                  <EyeOff size={13} aria-hidden />
+                  Answer key · hidden from students
+                </p>
+                <Field label="Model answer">
+                  <textarea
+                    className={`${inputClass} min-h-28`}
+                    value={question.model_answer}
+                    onChange={(event) => update(question.key, { model_answer: event.target.value })}
+                    maxLength={10000}
+                    placeholder="The answer you would give full marks to."
+                    required
+                  />
+                </Field>
+                <KeyPoints
+                  points={question.key_points}
+                  onChange={(key_points) => update(question.key, { key_points })}
+                />
+              </div>
             </div>
-            {question.key_points.length < MAX_KEY_POINTS ? (
-              <button
-                type="button"
-                className="mt-2 text-sm font-medium text-indigo-600 hover:text-indigo-800"
-                onClick={() => update(question.key, { key_points: [...question.key_points, ""] })}
-              >
-                + Add key point
-              </button>
-            ) : null}
-          </div>
-        </section>
-      ))}
+          </li>
+        ))}
+      </ol>
 
       <datalist id="topic-suggestions">
-        {[...new Set(questions.map((question) => question.topic.trim()).filter(Boolean))].map(
-          (topic) => (
-            <option key={topic} value={topic} />
-          ),
-        )}
+        {[...new Set(questions.map((question) => question.topic.trim()).filter(Boolean))].map((topic) => (
+          <option key={topic} value={topic} />
+        ))}
       </datalist>
 
       <button
         type="button"
-        className={`${secondaryButton} w-full border-dashed py-3`}
-        onClick={() =>
-          setQuestions((current) => [...current, emptyQuestion(current.at(-1)?.topic ?? "")])
-        }
+        className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line-strong py-4 text-sm font-medium text-muted transition-colors hover:border-accent-line hover:bg-accent-soft/50 hover:text-accent-text disabled:opacity-50"
+        onClick={() => setQuestions((current) => [...current, emptyQuestion(current.at(-1)?.topic ?? "")])}
         disabled={questions.length >= 30}
       >
-        + Add question
+        <Plus size={16} aria-hidden />
+        Add question
       </button>
 
-      <div className="sticky bottom-0 -mx-6 flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50/95 px-6 py-4 backdrop-blur">
-        {error ? <p className="mr-auto text-sm text-red-700">{error}</p> : null}
-        <button type="button" className={secondaryButton} onClick={onCancel} disabled={saving}>
-          Cancel
-        </button>
-        <button type="submit" className={primaryButton} disabled={saving}>
-          {saving ? "Saving…" : submitLabel}
-        </button>
+      <div className="sticky bottom-0 z-10 -mx-4 border-t border-line bg-surface/90 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="mr-auto text-sm text-muted">
+            <span className="font-semibold text-fg tabular-nums">{questions.length}</span> {questions.length === 1 ? "question" : "questions"} ·{" "}
+            <span className="font-semibold text-fg tabular-nums">{totalMarks}</span> marks
+          </p>
+          <Button onClick={onCancel} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" icon={Save} loading={saving}>
+            {saving ? "Saving…" : submitLabel}
+          </Button>
+        </div>
+        {error ? <Callout tone="danger" className="mt-3">{error}</Callout> : null}
       </div>
     </form>
   );
 }
 
-function PrivateBadge() {
-  return (
-    <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-      Hidden from students
-    </span>
-  );
-}
+/** Key points as removable chips, added one at a time with Enter. */
+function KeyPoints({ points, onChange }: { points: string[]; onChange: (points: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+  const full = points.length >= MAX_KEY_POINTS;
 
-function IconButton({
-  label,
-  disabled,
-  onClick,
-  children,
-}: {
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-  children: string;
-}) {
+  function add() {
+    const text = draft.trim();
+    if (!text || full) return;
+    onChange([...points, text]);
+    setDraft("");
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      add();
+    } else if (event.key === "Backspace" && !draft && points.length) {
+      onChange(points.slice(0, -1));
+    }
+  }
+
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      className="h-8 w-8 shrink-0 rounded-md border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 disabled:opacity-30"
-      onClick={onClick}
-      disabled={disabled}
-    >
-      {children}
-    </button>
+    <div className="mt-4">
+      <p className="mb-1.5 text-sm font-medium text-fg">
+        Key points{" "}
+        <span className="font-normal text-muted">
+          (optional, up to {MAX_KEY_POINTS}: what a full-marks answer must contain)
+        </span>
+      </p>
+      <div
+        className={cn(
+          inputClass,
+          "flex min-h-11 flex-wrap items-center gap-1.5 px-2 py-1.5 focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent/20",
+        )}
+      >
+        {points.map((point, index) => (
+          <span
+            key={`${index}:${point}`}
+            className="inline-flex max-w-full animate-pop-in items-center gap-1 rounded-md border border-line bg-surface-2 py-0.5 pr-0.5 pl-2 text-[13px] text-fg"
+          >
+            <span className="min-w-0 break-words">{point}</span>
+            <button
+              type="button"
+              aria-label={`Remove key point: ${point}`}
+              className="rounded p-0.5 text-subtle transition-colors hover:bg-surface-3 hover:text-fg"
+              onClick={() => onChange(points.filter((_, i) => i !== index))}
+            >
+              <X size={13} aria-hidden />
+            </button>
+          </span>
+        ))}
+        {!full ? (
+          <input
+            className="min-w-40 flex-1 bg-transparent px-1 py-1 text-sm text-fg outline-none placeholder:text-subtle"
+            value={draft}
+            maxLength={500}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            onBlur={add}
+            placeholder={points.length ? "Add another…" : "Type a key point and press Enter"}
+            aria-label="Add a key point"
+          />
+        ) : null}
+      </div>
+      <p className="mt-1.5 text-xs text-muted tabular-nums">
+        {points.length} / {MAX_KEY_POINTS}
+        {full ? " · limit reached" : " · Enter to add, Backspace to remove the last one"}
+      </p>
+    </div>
   );
 }

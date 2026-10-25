@@ -1,11 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AppShell, PageMessage } from "@/components/AppShell";
 import { AssignmentForm } from "@/components/AssignmentForm";
+import { Page, PageHeader } from "@/components/ui/Card";
 import { ApiError, getAssignmentKey, updateAssignment, type Assignment } from "@/lib/api";
 import { useAuthedUser } from "@/lib/useAuthedUser";
 
@@ -42,11 +42,12 @@ export default function EditAssignmentPage() {
       {!assignment && !error ? <PageMessage>Loading assignment…</PageMessage> : null}
 
       {assignment && token ? (
-        <div className="mx-auto w-full max-w-4xl px-6 py-8">
-          <Link className="text-sm text-slate-500 hover:text-slate-800" href={viewUrl}>
-            ← {assignment.title}
-          </Link>
-          <h1 className="mt-4 mb-6 text-2xl font-semibold">Edit assignment</h1>
+        <Page className="pb-0 lg:pb-0">
+          <PageHeader
+            back={{ href: viewUrl, label: assignment.title }}
+            title="Edit assignment"
+            description="Changes apply to the answer key used for grading. Editing is locked once students submit."
+          />
           <AssignmentForm
             initial={assignment}
             submitLabel="Save changes"
@@ -56,7 +57,7 @@ export default function EditAssignmentPage() {
               router.push(viewUrl);
             }}
           />
-        </div>
+        </Page>
       ) : null}
     </AppShell>
   );

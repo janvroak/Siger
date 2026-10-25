@@ -1,14 +1,21 @@
 "use client";
 
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
+import { AuthLayout, PasswordInput } from "@/components/AuthLayout";
+import { Button } from "@/components/ui/Button";
+import { Field, inputClass } from "@/components/ui/Field";
+import { Callout } from "@/components/ui/States";
+import { useToast } from "@/components/ui/Toast";
 import { saveToken } from "@/lib/auth";
 import { ApiError, login } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
+  const toast = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -22,6 +29,7 @@ export default function LoginPage() {
     try {
       const response = await login(email, password);
       saveToken(response.access_token);
+      toast.success(response.role === "professor" ? "Signed in to the faculty portal" : "Signed in to the student portal");
       router.replace("/dashboard");
     } catch (caughtError) {
       setError(
@@ -35,48 +43,49 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-6">
-      <form
-        className="w-full max-w-sm space-y-4 rounded border border-slate-200 bg-white p-6 shadow-sm"
-        onSubmit={handleSubmit}
-      >
-        <div>
-          <h1 className="text-xl font-semibold">Sign in to Siger</h1>
-        </div>
-        <label className="block text-sm">
-          Email
+    <AuthLayout
+      title="Welcome back"
+      subtitle="Sign in to your student or faculty portal. Your role comes from your account."
+    >
+      <form className="space-y-5" onSubmit={handleSubmit}>
+        {error ? (
+          <Callout tone="danger" title="Couldn't sign you in">
+            {error}
+          </Callout>
+        ) : null}
+        <Field label="Email">
           <input
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+            className={inputClass}
             type="email"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             autoComplete="email"
+            placeholder="you@university.edu"
+            aria-invalid={!!error || undefined}
+            autoFocus
             required
           />
-        </label>
-        <label className="block text-sm">
-          Password
-          <input
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-            type="password"
+        </Field>
+        <Field label="Password">
+          <PasswordInput
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoComplete="current-password"
+            aria-invalid={!!error || undefined}
             required
           />
-        </label>
-        {error ? <p className="text-sm text-red-700">{error}</p> : null}
-        <button
-          className="w-full rounded bg-slate-900 px-4 py-2 text-white disabled:opacity-60"
-          type="submit"
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? "Signing in..." : "Sign in"}
-        </button>
-        <p className="text-sm text-slate-600">
-          New to Siger? <Link className="underline" href="/register">Create an account</Link>
-        </p>
+        </Field>
+        <Button type="submit" variant="primary" size="lg" className="w-full" loading={isSubmitting}>
+          {isSubmitting ? "Signing in…" : "Sign in"}
+          {!isSubmitting ? <ArrowRight size={16} aria-hidden /> : null}
+        </Button>
       </form>
-    </main>
+      <p className="mt-8 text-center text-sm text-muted">
+        New to Siger?{" "}
+        <Link className="font-medium text-accent-text underline-offset-4 hover:underline" href="/register">
+          Create an account
+        </Link>
+      </p>
+    </AuthLayout>
   );
 }

@@ -1,12 +1,13 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AppShell, PageMessage } from "@/components/AppShell";
 import { ClassDashboard } from "@/components/ClassDashboard";
 import { InsightPanel } from "@/components/InsightPanel";
+import { Page, PageHeader } from "@/components/ui/Card";
+import { Tag } from "@/components/ui/Badge";
 import { StudentDashboard } from "@/components/StudentDashboard";
 import {
   ApiError,
@@ -53,13 +54,17 @@ export default function AnalyticsPage() {
       {!ready && !error ? <PageMessage>Loading analytics…</PageMessage> : null}
 
       {ready ? (
-        <div className="mx-auto w-full max-w-6xl px-6 py-8">
-          <Link className="text-sm text-slate-500 hover:text-slate-800" href={`/courses/${courseId}`}>
-            ← {course.code} · {course.title}
-          </Link>
-          <h1 className="mt-3 mb-6 text-2xl font-semibold">
-            {analytics ? "Class analytics" : "My progress"}
-          </h1>
+        <Page width="wide">
+          <PageHeader
+            back={{ href: `/courses/${courseId}`, label: `${course.code} · ${course.title}` }}
+            eyebrow={<Tag>{course.code}</Tag>}
+            title={analytics ? "Class analytics" : "My progress"}
+            description={
+              analytics
+                ? "Topic mastery, completion and learning gaps from published grades. Every figure comes from SQL, not the AI."
+                : "Your published grades in this course: how you are trending and which topics to revisit."
+            }
+          />
           {token ? (
             <div className="mb-6">
               <InsightPanel
@@ -79,7 +84,7 @@ export default function AnalyticsPage() {
           ) : null}
           {analytics ? <ClassDashboard analytics={analytics} courseId={courseId} /> : null}
           {progress ? <StudentDashboard progress={progress} courseId={courseId} viewer="student" /> : null}
-        </div>
+        </Page>
       ) : null}
     </AppShell>
   );

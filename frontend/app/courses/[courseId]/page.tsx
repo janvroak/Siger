@@ -1,14 +1,34 @@
 "use client";
 
+import {
+  BarChart3,
+  CheckCircle2,
+  Copy,
+  FileText,
+  Library,
+  Loader2,
+  MessageSquareText,
+  Plus,
+  Upload,
+  Users,
+  XCircle,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { AppShell, PageMessage } from "@/components/AppShell";
 import { AssignmentList } from "@/components/AssignmentList";
 import { OpenPdfButton } from "@/components/OpenPdfButton";
 import { courseAccent, plural } from "@/components/CourseCard";
-import { primaryButton, secondaryButton } from "@/components/Modal";
+import { Badge, type Tone } from "@/components/ui/Badge";
+import { Button, buttonClass, IconButton } from "@/components/ui/Button";
+import { Card, CardHeader, Page, Section } from "@/components/ui/Card";
+import { Dropzone } from "@/components/ui/Dropzone";
+import { ProgressBar } from "@/components/ui/Metrics";
+import { Callout, EmptyState } from "@/components/ui/States";
+import { useToast } from "@/components/ui/Toast";
 import {
   ApiError,
   getCourse,
@@ -22,16 +42,10 @@ import {
 } from "@/lib/api";
 import { useAuthedUser } from "@/lib/useAuthedUser";
 
-const STATUS_STYLE: Record<Material["status"], string> = {
-  ready: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  processing: "border-sky-200 bg-sky-50 text-sky-700",
-  failed: "border-red-200 bg-red-50 text-red-700",
-};
-
-const STATUS_LABEL: Record<Material["status"], string> = {
-  ready: "Ready",
-  processing: "Processing",
-  failed: "Failed",
+const STATUS: Record<Material["status"], { label: string; tone: Tone; icon: LucideIcon; pulse?: boolean }> = {
+  ready: { label: "Ready", tone: "success", icon: CheckCircle2 },
+  processing: { label: "Processing", tone: "info", icon: Loader2, pulse: true },
+  failed: { label: "Failed", tone: "danger", icon: XCircle },
 };
 
 export default function CoursePage() {
@@ -92,64 +106,52 @@ export default function CoursePage() {
       {!course && !error ? <PageMessage>Loading course…</PageMessage> : null}
 
       {course && user && token ? (
-        <div className="mx-auto w-full max-w-5xl px-6 py-8">
-          <Link className="text-sm text-slate-500 hover:text-slate-800" href="/dashboard">
-            ← Dashboard
-          </Link>
-
-          <section className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className={`h-2 bg-gradient-to-r ${courseAccent(course.code).band}`} />
-            <div className="flex flex-col gap-6 p-6 md:flex-row md:items-start md:justify-between">
+        <Page>
+          <section className="overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
+            <div className="flex flex-col gap-6 p-6 md:flex-row md:items-start md:justify-between lg:p-8">
               <div className="min-w-0">
-                <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-3">
                   <span
-                    className={`rounded-md px-2 py-0.5 font-semibold ${courseAccent(course.code).soft}`}
+                    className={`flex h-12 min-w-12 items-center justify-center rounded-xl px-2 font-display text-sm font-bold ${courseAccent(course.code).soft}`}
                   >
                     {course.code}
                   </span>
-                  <span className="text-slate-500">{course.semester}</span>
+                  <div className="text-sm">
+                    <p className="font-medium text-fg">{course.professor_name}</p>
+                    <p className="text-muted">{course.semester}</p>
+                  </div>
                 </div>
-                <h1 className="mt-3 text-2xl font-semibold">{course.title}</h1>
-                <p className="mt-1 text-sm text-slate-500">Taught by {course.professor_name}</p>
-                <p className="mt-4 max-w-2xl whitespace-pre-wrap text-slate-700">
-                  {course.description}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-500">
-                  {isProfessor ? <span>{plural(course.student_count, "student")} enrolled</span> : null}
-                  <span>{plural(readyCount, "document")} in the knowledge base</span>
+                <h1 className="mt-5 text-2xl font-bold tracking-tight text-fg sm:text-[28px]">{course.title}</h1>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed whitespace-pre-wrap text-muted">{course.description}</p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {isProfessor ? (
+                    <Badge icon={Users}>{plural(course.student_count, "student")} enrolled</Badge>
+                  ) : null}
+                  <Badge icon={Library}>{plural(readyCount, "document")} in the knowledge base</Badge>
+                  {assignments ? <Badge icon={FileText}>{plural(assignments.length, "assignment")}</Badge> : null}
                 </div>
               </div>
 
               {isProfessor ? (
-                <div className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm md:w-64">
-                  <p className="font-medium">Course code</p>
-                  <p className="mt-1 font-mono text-2xl font-semibold tracking-wider">{course.code}</p>
-                  <p className="mt-2 text-slate-500">
-                    Students join with this code and can then ask the AI Teaching Assistant about
-                    the material below.
-                  </p>
-                  <Link className={`${primaryButton} mt-4 w-full`} href={`/courses/${course.id}/analytics`}>
-                    Class analytics
-                  </Link>
-                </div>
+                <CourseCodeCard course={course} />
               ) : (
-                <div className="shrink-0 md:w-72">
+                <div className="w-full shrink-0 space-y-2 md:w-72">
                   {readyCount > 0 ? (
-                    <Link className={`${primaryButton} w-full py-3`} href={`/courses/${course.id}/chat`}>
-                      Open AI Teaching Assistant
+                    <Link className={buttonClass("primary", "lg", "w-full")} href={`/courses/${course.id}/chat`}>
+                      <MessageSquareText size={16} aria-hidden />
+                      Ask the teaching assistant
                     </Link>
                   ) : (
-                    <span className={`${secondaryButton} w-full cursor-not-allowed py-3`}>
-                      Open AI Teaching Assistant
+                    <span className={buttonClass("secondary", "lg", "w-full")} aria-disabled="true">
+                      <MessageSquareText size={16} aria-hidden />
+                      Ask the teaching assistant
                     </span>
                   )}
-                  <Link
-                    className={`${secondaryButton} mt-2 w-full py-3`}
-                    href={`/courses/${course.id}/analytics`}
-                  >
+                  <Link className={buttonClass("secondary", "lg", "w-full")} href={`/courses/${course.id}/analytics`}>
+                    <BarChart3 size={16} aria-hidden />
                     My progress
                   </Link>
-                  <p className="mt-2 text-center text-xs text-slate-500">
+                  <p className="pt-1 text-center text-xs text-muted">
                     {readyCount > 0
                       ? "Answers come only from this course's material, with sources."
                       : "Available once your professor uploads course material."}
@@ -159,15 +161,19 @@ export default function CoursePage() {
             </div>
           </section>
 
-          <section className="mt-8">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Assignments</h2>
-              {isProfessor ? (
-                <Link className={primaryButton} href={`/courses/${course.id}/assignments/new`}>
-                  + New assignment
+          <Section
+            className="mt-10"
+            title="Assignments"
+            count={assignments?.length}
+            action={
+              isProfessor ? (
+                <Link className={buttonClass("primary", "sm")} href={`/courses/${course.id}/assignments/new`}>
+                  <Plus size={14} aria-hidden />
+                  New assignment
                 </Link>
-              ) : null}
-            </div>
+              ) : null
+            }
+          >
             {assignments ? (
               <AssignmentList
                 courseId={course.id}
@@ -175,12 +181,12 @@ export default function CoursePage() {
                 audience={isProfessor ? "faculty" : "student"}
                 emptyText={
                   isProfessor
-                    ? "No assignments yet. Create one with questions and a model answer for each — submissions are graded against it."
-                    : "No assignments have been posted yet."
+                    ? "Create one with questions and a model answer for each. Submissions are graded against it."
+                    : "Your professor hasn't posted any assignments yet."
                 }
               />
             ) : null}
-          </section>
+          </Section>
 
           {isProfessor ? (
             <UploadPanel
@@ -193,54 +199,94 @@ export default function CoursePage() {
             />
           ) : null}
 
-          <section className="mt-8">
-            <h2 className="text-lg font-semibold">Course material</h2>
+          <Section title="Course material" count={visibleMaterials?.length}>
             {visibleMaterials && visibleMaterials.length === 0 ? (
-              <p className="mt-3 rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
-                {isProfessor
-                  ? "No material uploaded yet. Upload a PDF above to enable the AI Teaching Assistant."
-                  : "Your professor hasn't uploaded any material yet."}
-              </p>
+              <EmptyState
+                icon={Library}
+                title="No material yet"
+                body={
+                  isProfessor
+                    ? "Upload a PDF above to enable the AI teaching assistant."
+                    : "Your professor hasn't uploaded any material yet."
+                }
+              />
             ) : null}
-            <ul className="mt-3 divide-y divide-slate-200 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              {visibleMaterials?.map((material) => (
-                <li key={material.id} className="flex items-start gap-4 p-4">
-                  <PdfIcon />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate font-medium">{material.filename}</p>
-                      <span
-                        className={`rounded-full border px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[material.status]}`}
-                      >
-                        {STATUS_LABEL[material.status]}
+            {visibleMaterials && visibleMaterials.length > 0 ? (
+              <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface shadow-sm">
+                {visibleMaterials.map((material) => {
+                  const status = STATUS[material.status];
+                  return (
+                    <li key={material.id} className="flex items-start gap-4 px-4 py-4 sm:px-5">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-danger-soft text-danger">
+                        <FileText size={18} aria-hidden />
                       </span>
-                    </div>
-                    <p className="mt-0.5 text-sm text-slate-500">
-                      {plural(material.page_count, "page")}
-                      {material.status === "ready"
-                        ? ` · ${plural(material.chunk_count, "chunk")} indexed`
-                        : null}{" "}
-                      · uploaded {new Date(material.created_at).toLocaleDateString()}
-                    </p>
-                    {isProfessor && material.error ? (
-                      <p className="mt-1 text-sm text-red-700">{material.error}</p>
-                    ) : null}
-                    {isProfessor && !material.has_file ? (
-                      <p className="mt-1 text-xs text-slate-400">
-                        Uploaded before original files were stored — re-upload to enable viewing.
-                      </p>
-                    ) : null}
-                  </div>
-                  {material.has_file ? (
-                    <OpenPdfButton load={() => getMaterialPdf(token, course.id, material.id)} />
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </section>
-        </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-semibold text-fg">{material.filename}</p>
+                          <Badge tone={status.tone} icon={status.pulse ? undefined : status.icon} pulse={status.pulse} size="sm">
+                            {status.label}
+                          </Badge>
+                        </div>
+                        <p className="mt-0.5 text-xs text-muted">
+                          {plural(material.page_count, "page")}
+                          {material.status === "ready" ? ` · ${plural(material.chunk_count, "chunk")} indexed` : null} ·
+                          uploaded {new Date(material.created_at).toLocaleDateString()}
+                        </p>
+                        {isProfessor && material.error ? (
+                          <p className="mt-1 text-xs text-danger">{material.error}</p>
+                        ) : null}
+                        {isProfessor && !material.has_file ? (
+                          <p className="mt-1 text-xs text-muted">
+                            Uploaded before original files were stored. Re-upload to enable viewing.
+                          </p>
+                        ) : null}
+                      </div>
+                      {material.has_file ? (
+                        <OpenPdfButton
+                          className={buttonClass("ghost", "sm")}
+                          label="View"
+                          load={() => getMaterialPdf(token, course.id, material.id)}
+                        />
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </Section>
+        </Page>
       ) : null}
     </AppShell>
+  );
+}
+
+function CourseCodeCard({ course }: { course: Course }) {
+  const toast = useToast();
+  return (
+    <div className="w-full shrink-0 rounded-xl border border-line bg-surface-2/60 p-5 md:w-72">
+      <p className="text-xs font-semibold text-muted">Course code</p>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <p className="font-mono text-2xl font-bold tracking-widest text-fg">{course.code}</p>
+        <IconButton
+          icon={Copy}
+          label="Copy course code"
+          size="sm"
+          onClick={() => {
+            void navigator.clipboard
+              ?.writeText(course.code)
+              .then(() => toast.success("Course code copied"))
+              .catch(() => toast.error("Could not copy the code"));
+          }}
+        />
+      </div>
+      <p className="mt-2 text-xs leading-relaxed text-muted">
+        Students join with this code and can then ask the AI teaching assistant about the material below.
+      </p>
+      <Link className={buttonClass("primary", "md", "mt-4 w-full")} href={`/courses/${course.id}/analytics`}>
+        <BarChart3 size={15} aria-hidden />
+        Class analytics
+      </Link>
+    </div>
   );
 }
 
@@ -260,7 +306,6 @@ function UploadPanel({
     | { kind: "done"; material: Material }
     | { kind: "error"; message: string }
   >({ kind: "idle" });
-  const fileInput = useRef<HTMLInputElement>(null);
 
   async function handleUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -272,9 +317,6 @@ function UploadPanel({
       const material = await uploadMaterial(token, course.id, file);
       setState({ kind: "done", material });
       setFile(null);
-      if (fileInput.current) {
-        fileInput.current.value = "";
-      }
     } catch (caughtError) {
       setState({
         kind: "error",
@@ -290,69 +332,42 @@ function UploadPanel({
   const isUploading = state.kind === "uploading";
 
   return (
-    <section id="upload" className="mt-8 scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-semibold">Upload course material</h2>
-      <p className="mt-1 text-sm text-slate-500">
-        PDFs are split into chunks, embedded and stored in the course knowledge base. Scanned PDFs
-        without a text layer are not supported.
-      </p>
-
-      <form className="mt-4" onSubmit={handleUpload}>
-        <label
-          htmlFor="material"
-          className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 text-center ${
-            file ? "border-indigo-300 bg-indigo-50/50" : "border-slate-300 hover:bg-slate-50"
-          }`}
-        >
-          <PdfIcon />
-          <span className="mt-2 text-sm font-medium">
-            {file ? file.name : "Choose a PDF to upload"}
-          </span>
-          <span className="mt-0.5 text-xs text-slate-500">
-            {file ? `${(file.size / 1024 / 1024).toFixed(2)} MB` : "PDF up to 20 MB"}
-          </span>
-          <input
-            id="material"
-            ref={fileInput}
-            className="sr-only"
-            type="file"
-            accept="application/pdf,.pdf"
-            onChange={(event) => {
-              setFile(event.target.files?.[0] ?? null);
-              setState({ kind: "idle" });
-            }}
-            disabled={isUploading}
-          />
-        </label>
-
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button className={primaryButton} type="submit" disabled={!file || isUploading}>
+    <Card id="upload" className="mt-10 scroll-mt-20">
+      <CardHeader
+        title="Upload course material"
+        description="PDFs are split into chunks, embedded and stored in the course knowledge base. Scanned PDFs without a text layer are not supported."
+      />
+      <form className="mt-5" onSubmit={handleUpload}>
+        <Dropzone
+          id="material"
+          file={file}
+          disabled={isUploading}
+          onFile={(next) => {
+            setFile(next);
+            setState({ kind: "idle" });
+          }}
+        />
+        {state.kind === "uploading" ? (
+          <div className="mt-4">
+            <p className="text-sm text-muted">
+              Extracting text, chunking, embedding and storing {state.filename} in the knowledge base…
+            </p>
+            <ProgressBar label="Processing upload" className="mt-2" />
+          </div>
+        ) : null}
+        {state.kind === "done" ? (
+          <Callout tone="success" className="mt-4" title={`${state.material.filename} is ready`}>
+            {plural(state.material.page_count, "page")} split into {plural(state.material.chunk_count, "chunk")}, embedded and
+            indexed.
+          </Callout>
+        ) : null}
+        {state.kind === "error" ? <Callout tone="danger" className="mt-4">{state.message}</Callout> : null}
+        <div className="mt-4">
+          <Button type="submit" variant="primary" icon={Upload} disabled={!file} loading={isUploading}>
             {isUploading ? "Processing…" : "Upload and index"}
-          </button>
-          {state.kind === "uploading" ? (
-            <p className="flex items-center gap-2 text-sm text-sky-700">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-sky-500" />
-              Extracting text, chunking, embedding and storing {state.filename} in the knowledge
-              base…
-            </p>
-          ) : null}
-          {state.kind === "done" ? (
-            <p className="text-sm text-emerald-700">
-              ✓ {state.material.filename} is ready: {plural(state.material.page_count, "page")} split
-              into {plural(state.material.chunk_count, "chunk")}, embedded and indexed.
-            </p>
-          ) : null}
-          {state.kind === "error" ? <p className="text-sm text-red-700">{state.message}</p> : null}
+          </Button>
         </div>
       </form>
-    </section>
-  );
-}
-
-function PdfIcon() {
-  return (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-[10px] font-bold text-red-600">
-      PDF
-    </span>
+    </Card>
   );
 }

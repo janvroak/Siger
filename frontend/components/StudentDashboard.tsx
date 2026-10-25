@@ -1,18 +1,38 @@
+"use client";
+
+import {
+  AlertTriangle,
+  ArrowRight,
+  CalendarX2,
+  CheckCircle2,
+  CircleDashed,
+  Clock,
+  GraduationCap,
+  ListChecks,
+  TrendingDown,
+  type LucideIcon,
+} from "lucide-react";
 import Link from "next/link";
 
-import { ChartCard, pct, StatTile } from "@/components/charts/ChartParts";
-import { MasteryBars, MasteryTable } from "@/components/charts/MasteryBars";
+import { ChartCard, pct } from "@/components/charts/ChartParts";
+import { MasteryBars, MasteryTable, TopicRadar } from "@/components/charts/MasteryBars";
 import { TrendChart, TrendTable } from "@/components/charts/TrendChart";
 import { plural } from "@/components/CourseCard";
+import { Badge, type Tone } from "@/components/ui/Badge";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { StatCard } from "@/components/ui/Metrics";
+import { EmptyState } from "@/components/ui/States";
 import type { StudentProgress } from "@/lib/api";
 
-const STATE_LABEL: Record<StudentProgress["assignments"][number]["state"], string> = {
-  graded: "Graded",
-  under_review: "Being graded",
-  submitted: "Being graded",
-  failed: "Being graded",
-  overdue: "Missed",
-  pending: "Not submitted",
+type AssignmentState = StudentProgress["assignments"][number]["state"];
+
+const STATE: Record<AssignmentState, { label: string; tone: Tone; icon: LucideIcon }> = {
+  graded: { label: "Graded", tone: "success", icon: CheckCircle2 },
+  under_review: { label: "Being graded", tone: "accent", icon: Clock },
+  submitted: { label: "Being graded", tone: "accent", icon: Clock },
+  failed: { label: "Being graded", tone: "accent", icon: Clock },
+  overdue: { label: "Missed", tone: "danger", icon: AlertTriangle },
+  pending: { label: "Not submitted", tone: "neutral", icon: CircleDashed },
 };
 
 /** A student's progress in one course: comprehension, topics, trend, assignments. */
@@ -32,8 +52,10 @@ export function StudentDashboard({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <StatCard
+          emphasis
+          icon={GraduationCap}
           label="Comprehension score"
           value={pct(progress.comprehension)}
           note={
@@ -42,67 +64,83 @@ export function StudentDashboard({
               : "All published marks, weighted by marks"
           }
         />
-        <StatTile
-          label="Assignments graded"
-          value={`${graded} / ${progress.assignments.length}`}
+        <StatCard icon={ListChecks} label="Assignments graded" value={`${graded} / ${progress.assignments.length}`} />
+        <StatCard
+          icon={CalendarX2}
+          tone={missed ? "danger" : "success"}
+          label="Missed deadlines"
+          value={missed}
+          note={missed ? "Deadline passed without a submission" : "None missed"}
         />
-        <StatTile label="Missed deadlines" value={String(missed)} />
-        <StatTile
+        <StatCard
+          icon={TrendingDown}
+          tone={gaps.length ? "warning" : "success"}
           label="Learning gaps"
-          value={String(gaps.length)}
+          value={gaps.length}
           note={gaps.length ? gaps.map((gap) => gap.topic).join(", ") : `Topics below ${pct(progress.gap_threshold)}`}
         />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <ChartCard
-          title="Topic mastery"
-          subtitle={`${you ? "Your" : "Their"} marks per topic, weakest first`}
-          table={progress.topics.length ? <MasteryTable items={progress.topics} /> : undefined}
-        >
-          <MasteryBars items={progress.topics} threshold={progress.gap_threshold} />
-        </ChartCard>
-        <ChartCard
           title="Score trend"
           subtitle="Published score per assignment, by deadline"
           table={progress.trend.length ? <TrendTable items={progress.trend} /> : undefined}
         >
-          <TrendChart items={progress.trend} />
+          <TrendChart items={progress.trend} threshold={progress.gap_threshold} height={260} />
+        </ChartCard>
+        <ChartCard
+          title="Topic mastery"
+          subtitle={`${you ? "Your" : "Their"} marks per topic`}
+          table={progress.topics.length ? <MasteryTable items={progress.topics} /> : undefined}
+        >
+          <TopicRadar items={progress.topics} threshold={progress.gap_threshold} />
         </ChartCard>
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold">Assignments</h2>
+      {progress.topics.length >= 3 ? (
+        <ChartCard title="Topics to focus on" subtitle="Weakest first. Red bars are below the learning-gap line.">
+          <MasteryBars items={progress.topics} threshold={progress.gap_threshold} limit={5} />
+        </ChartCard>
+      ) : null}
+
+      <Card padded={false}>
+        <div className="p-5 pb-3 sm:p-6 sm:pb-3">
+          <CardHeader
+            title="Assignments"
+            description={`Only published grades count. ${plural(progress.trend.length, "graded assignment")} so far.`}
+          />
+        </div>
         {progress.assignments.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-500">No assignments yet.</p>
+          <div className="px-6 pb-6">
+            <EmptyState compact icon={ListChecks} title="No assignments yet" />
+          </div>
         ) : (
-          <ul className="mt-3 divide-y divide-slate-100">
-            {progress.assignments.map((assignment) => (
-              <li key={assignment.assignment_id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                <Link
-                  className="min-w-0 truncate hover:underline"
-                  href={`/courses/${courseId}/assignments/${assignment.assignment_id}`}
-                >
-                  {assignment.title}
-                </Link>
-                <span className="flex shrink-0 items-center gap-3 text-slate-500">
-                  <span>due {new Date(assignment.deadline).toLocaleDateString()}</span>
-                  <span className={assignment.state === "overdue" ? "font-medium text-red-700" : ""}>
-                    {assignment.state === "overdue" ? "▲ " : ""}
-                    {STATE_LABEL[assignment.state]}
-                  </span>
-                  <span className="w-12 text-right font-medium tabular-nums text-slate-800">
-                    {pct(assignment.score)}
-                  </span>
-                </span>
-              </li>
-            ))}
+          <ul className="divide-y divide-line border-t border-line">
+            {progress.assignments.map((assignment) => {
+              const state = STATE[assignment.state];
+              return (
+                <li key={assignment.assignment_id}>
+                  <Link
+                    className="group flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-surface-2 sm:px-6"
+                    href={`/courses/${courseId}/assignments/${assignment.assignment_id}`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-fg">{assignment.title}</p>
+                      <p className="text-xs text-muted">Due {new Date(assignment.deadline).toLocaleDateString()}</p>
+                    </div>
+                    <Badge tone={state.tone} icon={state.icon}>
+                      {state.label}
+                    </Badge>
+                    <span className="w-12 text-right text-sm font-semibold text-fg tabular-nums">{pct(assignment.score)}</span>
+                    <ArrowRight size={15} className="text-subtle transition-transform group-hover:translate-x-0.5" aria-hidden />
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
-        <p className="mt-3 text-xs text-slate-400">
-          Only published grades count. {plural(progress.trend.length, "graded assignment")} so far.
-        </p>
-      </section>
+      </Card>
     </div>
   );
 }

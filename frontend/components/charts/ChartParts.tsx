@@ -1,128 +1,112 @@
 "use client";
 
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { Table2, TriangleAlert } from "lucide-react";
+import { ReactNode, useState } from "react";
+
+import { cn } from "@/components/ui/Button";
 
 export function pct(value: number | null | undefined, digits = 0): string {
   return value === null || value === undefined ? "—" : `${(value * 100).toFixed(digits)}%`;
 }
 
-/** A titled card that every chart sits in, with an optional "view as table". */
+/** A titled card that every chart sits in, with a "table view" toggle for accessibility. */
 export function ChartCard({
   title,
   subtitle,
   legend,
   table,
+  action,
   children,
+  className,
 }: {
   title: string;
   subtitle?: string;
   legend?: ReactNode;
   table?: ReactNode;
+  action?: ReactNode;
   children: ReactNode;
+  className?: string;
 }) {
+  const [showTable, setShowTable] = useState(false);
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-      <h2 className="text-base font-semibold" style={{ color: "var(--viz-text-primary)" }}>
-        {title}
-      </h2>
-      {subtitle ? (
-        <p className="mt-0.5 text-sm" style={{ color: "var(--viz-text-secondary)" }}>
-          {subtitle}
-        </p>
-      ) : null}
+    <section className={cn("flex flex-col rounded-xl border border-line bg-surface p-5 shadow-sm sm:p-6", className)}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="text-[15px] font-semibold text-fg">{title}</h2>
+          {subtitle ? <p className="mt-0.5 text-sm text-muted">{subtitle}</p> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {action}
+          {table ? (
+            <button
+              type="button"
+              onClick={() => setShowTable((v) => !v)}
+              aria-pressed={showTable}
+              className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors",
+                showTable ? "bg-surface-2 text-fg" : "text-muted hover:bg-surface-2 hover:text-fg",
+              )}
+            >
+              <Table2 size={14} aria-hidden />
+              Table
+            </button>
+          ) : null}
+        </div>
+      </div>
       {legend ? <div className="mt-3">{legend}</div> : null}
-      <div className="mt-4">{children}</div>
-      {table ? (
-        <details className="mt-4 text-sm">
-          <summary className="cursor-pointer" style={{ color: "var(--viz-text-secondary)" }}>
-            View as table
-          </summary>
-          <div className="mt-2 overflow-x-auto">{table}</div>
-        </details>
-      ) : null}
+      <div className="mt-4 flex-1">
+        {showTable && table ? <div className="overflow-x-auto">{table}</div> : children}
+      </div>
     </section>
   );
 }
 
 export function LegendItem({ color, label }: { color: string; label: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: "var(--viz-text-secondary)" }}>
-      <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
+    <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+      <span className="inline-block h-2.5 w-2.5 rounded-[3px]" style={{ background: color }} />
       {label}
     </span>
   );
 }
 
-/** Status is never color alone: an icon and a word go with it. */
+/** Status is never colour alone: an icon and a word go with it. */
 export function GapBadge() {
   return (
-    <span
-      className="inline-flex items-center gap-1 rounded-full border px-1.5 py-px text-[11px] font-medium"
-      style={{ borderColor: "var(--viz-critical)", color: "var(--viz-text-primary)" }}
-    >
-      <span aria-hidden style={{ color: "var(--viz-critical)" }}>
-        ▲
-      </span>
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-md border border-danger-line bg-danger-soft px-1.5 py-px text-[11px] font-medium text-danger">
+      <TriangleAlert size={11} strokeWidth={2.5} aria-hidden />
       Gap
     </span>
   );
 }
 
-export function StatTile({
-  label,
-  value,
-  note,
-}: {
-  label: string;
-  value: string;
-  note?: string;
-}) {
+/** Tooltip body used by every Recharts chart. */
+export function ChartTooltip({ title, rows }: { title: ReactNode; rows: { label: string; value: ReactNode; color?: string }[] }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-sm" style={{ color: "var(--viz-text-secondary)" }}>
-        {label}
-      </p>
-      <p className="mt-1 text-3xl font-semibold" style={{ color: "var(--viz-text-primary)" }}>
-        {value}
-      </p>
-      {note ? (
-        <p className="mt-1 text-xs" style={{ color: "var(--viz-text-muted)" }}>
-          {note}
-        </p>
-      ) : null}
+    <div className="min-w-40 rounded-lg border border-line bg-surface px-3 py-2.5 text-xs shadow-lg">
+      <p className="mb-1.5 font-semibold text-fg">{title}</p>
+      <div className="space-y-1">
+        {rows.map((row) => (
+          <p key={row.label} className="flex items-center justify-between gap-4">
+            <span className="flex items-center gap-1.5 text-muted">
+              {row.color ? <span className="h-2 w-2 rounded-[2px]" style={{ background: row.color }} /> : null}
+              {row.label}
+            </span>
+            <span className="font-medium text-fg tabular-nums">{row.value}</span>
+          </p>
+        ))}
+      </div>
     </div>
   );
 }
 
-export function Tooltip({ x, y, children }: { x: number; y: number; children: ReactNode }) {
-  return (
-    <div
-      role="tooltip"
-      className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg"
-      style={{ left: x, top: y - 8, color: "var(--viz-text-primary)" }}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** Width of a container, kept current on resize (for SVG charts). */
-export function useWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
-  const ref = useRef<T>(null);
-  const [width, setWidth] = useState(0);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) {
-      return;
-    }
-    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
-    observer.observe(element);
-    setWidth(element.getBoundingClientRect().width);
-    return () => observer.disconnect();
-  }, []);
-  return [ref, width];
-}
+/** Shared axis styling: small muted text, no tick lines. */
+export const axisProps = {
+  tick: { fill: "var(--viz-text-muted)", fontSize: 11 },
+  tickLine: false,
+  axisLine: false,
+} as const;
 
 export const tableClass = "w-full text-left text-sm tabular-nums";
-export const thClass = "border-b border-slate-200 py-1.5 pr-4 text-xs font-medium text-slate-500";
-export const tdClass = "border-b border-slate-100 py-1.5 pr-4";
+export const thClass = "border-b border-line bg-surface-2 px-3 py-2 text-xs font-medium text-muted first:rounded-tl-lg last:rounded-tr-lg";
+export const tdClass = "border-b border-line px-3 py-2 text-fg";

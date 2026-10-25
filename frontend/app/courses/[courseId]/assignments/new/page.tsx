@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
 import { AppShell, PageMessage } from "@/components/AppShell";
 import { AssignmentForm } from "@/components/AssignmentForm";
+import { Page, PageHeader } from "@/components/ui/Card";
 import { createAssignment } from "@/lib/api";
 import { useAuthedUser } from "@/lib/useAuthedUser";
 
@@ -21,15 +21,12 @@ export default function NewAssignmentPage() {
       ) : null}
 
       {user?.role === "professor" && token ? (
-        <div className="mx-auto w-full max-w-4xl px-6 py-8">
-          <Link className="text-sm text-slate-500 hover:text-slate-800" href={`/courses/${courseId}`}>
-            ← Course
-          </Link>
-          <h1 className="mt-4 text-2xl font-semibold">New assignment</h1>
-          <p className="mt-1 mb-6 text-sm text-slate-500">
-            Write each question with the answer you would give full marks to. Submissions are graded
-            against this answer key.
-          </p>
+        <Page className="pb-0 lg:pb-0">
+          <PageHeader
+            back={{ href: `/courses/${courseId}`, label: "Back to course" }}
+            title="New assignment"
+            description="Write each question with the answer you would give full marks to. Submissions are graded against this answer key."
+          />
           <AssignmentForm
             submitLabel="Create assignment"
             onCancel={() => router.push(`/courses/${courseId}`)}
@@ -38,7 +35,7 @@ export default function NewAssignmentPage() {
               router.push(`/courses/${courseId}/assignments/${created.id}`);
             }}
           />
-        </div>
+        </Page>
       ) : null}
     </AppShell>
   );

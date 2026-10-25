@@ -1,11 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AppShell, PageMessage } from "@/components/AppShell";
 import { InsightPanel } from "@/components/InsightPanel";
+import { Avatar } from "@/components/ClassDashboard";
+import { Page, PageHeader } from "@/components/ui/Card";
 import { StudentDashboard } from "@/components/StudentDashboard";
 import { ApiError, getStudentProgress, type StudentProgress } from "@/lib/api";
 import { useAuthedUser } from "@/lib/useAuthedUser";
@@ -40,11 +41,17 @@ export default function StudentProgressPage() {
       {error ? <PageMessage tone="error">{error}</PageMessage> : null}
       {!progress && !error ? <PageMessage>Loading progress…</PageMessage> : null}
       {progress ? (
-        <div className="mx-auto w-full max-w-6xl px-6 py-8">
-          <Link className="text-sm text-slate-500 hover:text-slate-800" href={`/courses/${courseId}/analytics`}>
-            ← Class analytics
-          </Link>
-          <h1 className="mt-3 mb-6 text-2xl font-semibold">{progress.student_name}</h1>
+        <Page width="wide">
+          <PageHeader
+            back={{ href: `/courses/${courseId}/analytics`, label: "Class analytics" }}
+            title={
+              <span className="flex items-center gap-3">
+                <Avatar name={progress.student_name} />
+                {progress.student_name}
+              </span>
+            }
+            description="Published grades only. Draft and AI-only marks are not counted."
+          />
           {token ? (
             <div className="mb-6">
               <InsightPanel
@@ -56,7 +63,7 @@ export default function StudentProgressPage() {
             </div>
           ) : null}
           <StudentDashboard progress={progress} courseId={courseId} viewer="faculty" />
-        </div>
+        </Page>
       ) : null}
     </AppShell>
   );

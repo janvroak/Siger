@@ -1,163 +1,246 @@
-import Link from "next/link";
+"use client";
 
 import {
-  ChartCard,
-  pct,
-  StatTile,
-  tableClass,
-  tdClass,
-  thClass,
-} from "@/components/charts/ChartParts";
-import {
-  CompletionBars,
-  CompletionLegend,
-  CompletionTable,
-} from "@/components/charts/CompletionBars";
-import { MasteryBars, MasteryTable } from "@/components/charts/MasteryBars";
+  AlertTriangle,
+  ArrowRight,
+  Bot,
+  CalendarX2,
+  CheckCircle2,
+  ClipboardCheck,
+  GraduationCap,
+  TrendingDown,
+  Users,
+} from "lucide-react";
+import Link from "next/link";
+
+import { ChartCard, pct } from "@/components/charts/ChartParts";
+import { CompletionBars, CompletionDonut, CompletionLegend, CompletionTable } from "@/components/charts/CompletionBars";
+import { MasteryBars, MasteryTable, TopicColumns } from "@/components/charts/MasteryBars";
 import { plural } from "@/components/CourseCard";
+import { Badge } from "@/components/ui/Badge";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { StatCard } from "@/components/ui/Metrics";
+import { EmptyState } from "@/components/ui/States";
+import { DataTable } from "@/components/ui/Table";
 import type { CourseAnalytics } from "@/lib/api";
+
+type StudentRow = CourseAnalytics["students"][number];
+type OverdueRow = CourseAnalytics["overdue"][number];
 
 /** Faculty view of a course: mastery, learning gaps, completion, students, AI agreement. */
 export function ClassDashboard({ analytics, courseId }: { analytics: CourseAnalytics; courseId: string }) {
   const gaps = analytics.topics.filter((topic) => topic.is_gap);
   const agreement = analytics.agreement;
+  const behind = new Set(analytics.overdue.map((o) => o.student_id)).size;
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <StatCard
+          emphasis
+          icon={GraduationCap}
           label="Class comprehension"
           value={pct(analytics.comprehension)}
           note={`${plural(analytics.enrolled, "student")} · published grades only`}
         />
-        <StatTile
+        <StatCard
+          icon={ClipboardCheck}
           label="Completion"
           value={pct(analytics.completion_rate)}
-          note={`Submissions across ${plural(analytics.assignments, "assignment")}`}
+          note={`Across ${plural(analytics.assignments, "assignment")}`}
         />
-        <StatTile
+        <StatCard
+          icon={TrendingDown}
+          tone={gaps.length ? "danger" : "success"}
           label="Learning gaps"
-          value={String(gaps.length)}
+          value={gaps.length}
           note={gaps.length ? gaps.map((gap) => gap.topic).join(", ") : `No topic below ${pct(analytics.gap_threshold)}`}
         />
-        <StatTile
+        <StatCard
+          icon={CalendarX2}
+          tone={analytics.overdue.length ? "warning" : "success"}
           label="Overdue submissions"
-          value={String(analytics.overdue.length)}
-          note={
-            analytics.overdue.length
-              ? `${plural(new Set(analytics.overdue.map((o) => o.student_id)).size, "student")} behind`
-              : "Everyone is on time"
-          }
+          value={analytics.overdue.length}
+          note={analytics.overdue.length ? `${plural(behind, "student")} behind` : "Everyone is on time"}
         />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <ChartCard
-          title="Topic mastery"
-          subtitle="Class marks per topic, weakest first"
-          table={analytics.topics.length ? <MasteryTable items={analytics.topics} /> : undefined}
-        >
-          <MasteryBars items={analytics.topics} threshold={analytics.gap_threshold} />
-        </ChartCard>
-        <ChartCard
-          title="Completion by assignment"
-          subtitle="Enrolled students who submitted, are not yet due, or missed the deadline"
-          legend={analytics.completion.length ? <CompletionLegend /> : undefined}
+          title="Completion"
+          subtitle="Submitted, not yet due, or missed, per student and assignment"
           table={analytics.completion.length ? <CompletionTable items={analytics.completion} /> : undefined}
         >
-          <CompletionBars items={analytics.completion} />
+          <CompletionDonut items={analytics.completion} rate={analytics.completion_rate} />
+          {analytics.completion.length ? (
+            <div className="mt-6 border-t border-line pt-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-muted">By assignment</p>
+                <CompletionLegend />
+              </div>
+              <CompletionBars items={analytics.completion} />
+            </div>
+          ) : null}
+        </ChartCard>
+
+        <ChartCard
+          title="Weakest topics"
+          subtitle="Class mastery, lowest first. Red bars are learning gaps."
+          table={analytics.topics.length ? <MasteryTable items={analytics.topics} /> : undefined}
+        >
+          <MasteryBars items={analytics.topics} threshold={analytics.gap_threshold} limit={6} />
         </ChartCard>
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold">Students</h2>
-        <p className="mt-0.5 text-sm text-slate-500">Lowest comprehension first; students without a published grade at the end.</p>
+      <ChartCard
+        title="Class topic averages"
+        subtitle="Marks earned out of marks possible, per topic"
+        table={analytics.topics.length ? <MasteryTable items={analytics.topics} /> : undefined}
+      >
+        {/* Column labels collide on phones, so small screens get the same data as labelled bars. */}
+        <div className="hidden sm:block">
+          <TopicColumns items={analytics.topics} threshold={analytics.gap_threshold} />
+        </div>
+        <div className="sm:hidden">
+          <MasteryBars items={analytics.topics} threshold={analytics.gap_threshold} />
+        </div>
+      </ChartCard>
+
+      <Card padded={false}>
+        <div className="p-5 pb-4 sm:p-6 sm:pb-4">
+          <CardHeader
+            title="Students"
+            description="Lowest comprehension first. Click a header to sort."
+            icon={<HeaderIcon icon={Users} />}
+          />
+        </div>
         {analytics.students.length === 0 ? (
-          <p className="mt-3 text-sm text-slate-500">No students enrolled yet.</p>
-        ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className={tableClass}>
-              <thead>
-                <tr>
-                  <th className={thClass}>Student</th>
-                  <th className={thClass}>Comprehension</th>
-                  <th className={thClass}>Graded</th>
-                  <th className={thClass}>Submitted</th>
-                  <th className={thClass}>Overdue</th>
-                  <th className={thClass} />
-                </tr>
-              </thead>
-              <tbody>
-                {analytics.students.map((student) => (
-                  <tr key={student.student_id}>
-                    <td className={tdClass}>
-                      <p className="font-medium">{student.student_name}</p>
-                      <p className="text-xs text-slate-500">{student.student_email}</p>
-                    </td>
-                    <td className={tdClass}>
-                      {pct(student.comprehension)}
-                      {student.comprehension !== null && student.comprehension < analytics.gap_threshold ? (
-                        <span className="ml-1.5 text-xs text-red-700">▲ at risk</span>
-                      ) : null}
-                    </td>
-                    <td className={tdClass}>{student.graded}</td>
-                    <td className={tdClass}>{student.submitted}</td>
-                    <td className={tdClass}>{student.overdue || "—"}</td>
-                    <td className={`${tdClass} text-right`}>
-                      <Link
-                        className="text-indigo-600 hover:text-indigo-800"
-                        href={`/courses/${courseId}/analytics/students/${student.student_id}`}
-                      >
-                        Progress →
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="px-6 pb-6">
+            <EmptyState compact icon={Users} title="No students enrolled yet" body="Share the course code so students can join." />
           </div>
+        ) : (
+          <DataTable<StudentRow>
+            caption="Students"
+            rows={analytics.students}
+            rowKey={(row) => row.student_id}
+            maxHeight="28rem"
+            columns={[
+              {
+                key: "name",
+                header: "Student",
+                sortValue: (row) => row.student_name.toLowerCase(),
+                cell: (row) => (
+                  <div className="flex items-center gap-3">
+                    <Avatar name={row.student_name} />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-fg">{row.student_name}</p>
+                      <p className="truncate text-xs text-muted">{row.student_email}</p>
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                key: "comprehension",
+                header: "Comprehension",
+                sortValue: (row) => row.comprehension,
+                cell: (row) => <ComprehensionCell value={row.comprehension} threshold={analytics.gap_threshold} />,
+              },
+              { key: "graded", header: "Graded", align: "right", sortValue: (row) => row.graded, cell: (row) => <span className="tabular-nums">{row.graded}</span> },
+              { key: "submitted", header: "Submitted", align: "right", sortValue: (row) => row.submitted, cell: (row) => <span className="tabular-nums">{row.submitted}</span> },
+              {
+                key: "overdue",
+                header: "Overdue",
+                align: "right",
+                sortValue: (row) => row.overdue,
+                cell: (row) =>
+                  row.overdue ? (
+                    <span className="inline-flex items-center gap-1 font-medium text-danger tabular-nums">
+                      <AlertTriangle size={13} aria-hidden />
+                      {row.overdue}
+                    </span>
+                  ) : (
+                    <span className="text-subtle">—</span>
+                  ),
+              },
+              {
+                key: "link",
+                header: <span className="sr-only">Progress</span>,
+                align: "right",
+                cell: (row) => (
+                  <Link
+                    className="inline-flex items-center gap-1 rounded-md text-[13px] font-medium text-accent-text opacity-80 transition-opacity group-hover:opacity-100 hover:underline"
+                    href={`/courses/${courseId}/analytics/students/${row.student_id}`}
+                  >
+                    Progress
+                    <ArrowRight size={13} aria-hidden />
+                  </Link>
+                ),
+              },
+            ]}
+          />
         )}
-      </section>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-base font-semibold">Overdue work</h2>
+        <Card padded={false}>
+          <div className="p-5 pb-4 sm:p-6 sm:pb-4">
+            <CardHeader
+              title="Overdue work"
+              description="Enrolled students with no submission after the deadline"
+              icon={<HeaderIcon icon={CalendarX2} />}
+            />
+          </div>
           {analytics.overdue.length === 0 ? (
-            <p className="mt-2 text-sm text-slate-500">No missed deadlines.</p>
+            <div className="px-6 pb-6">
+              <EmptyState compact icon={CheckCircle2} title="No missed deadlines" />
+            </div>
           ) : (
-            <ul className="mt-3 divide-y divide-slate-100 text-sm">
-              {analytics.overdue.map((item) => (
-                <li key={`${item.student_id}:${item.assignment_id}`} className="flex justify-between gap-3 py-2">
-                  <span>
-                    <span className="text-red-700" aria-hidden>
-                      ▲{" "}
+            <DataTable<OverdueRow>
+              caption="Overdue work"
+              rows={analytics.overdue}
+              rowKey={(row) => `${row.student_id}:${row.assignment_id}`}
+              maxHeight="20rem"
+              columns={[
+                {
+                  key: "student",
+                  header: "Student",
+                  sortValue: (row) => row.student_name.toLowerCase(),
+                  cell: (row) => (
+                    <span className="inline-flex items-center gap-2 font-medium text-fg">
+                      <AlertTriangle size={14} className="text-danger" aria-label="Overdue" />
+                      {row.student_name}
                     </span>
-                    {item.student_name}
-                  </span>
-                  <span className="text-slate-500">
-                    {item.assignment_title} · due {new Date(item.deadline).toLocaleDateString()}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                  ),
+                },
+                { key: "assignment", header: "Assignment", sortValue: (row) => row.assignment_title, cell: (row) => <span className="text-muted">{row.assignment_title}</span> },
+                {
+                  key: "deadline",
+                  header: "Due",
+                  align: "right",
+                  sortValue: (row) => row.deadline,
+                  cell: (row) => <span className="whitespace-nowrap text-muted tabular-nums">{new Date(row.deadline).toLocaleDateString()}</span>,
+                },
+              ]}
+            />
           )}
-        </section>
+        </Card>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-base font-semibold">AI grading vs faculty review</h2>
-          <p className="mt-0.5 text-sm text-slate-500">
-            How often your published marks matched the evaluation agent&apos;s marks.
-          </p>
+        <Card>
+          <CardHeader
+            title="AI grading vs faculty review"
+            description="How often your published marks matched the evaluation agent."
+            icon={<HeaderIcon icon={Bot} />}
+          />
           {agreement.reviewed_answers === 0 ? (
-            <p className="mt-3 text-sm text-slate-500">No reviewed answers yet.</p>
+            <EmptyState compact className="mt-4" icon={Bot} title="No reviewed answers yet" />
           ) : (
-            <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
+            <dl className="mt-5 grid grid-cols-2 gap-3">
               <Metric label="Exact agreement" value={pct(agreement.exact_agreement)} note={`of ${plural(agreement.reviewed_answers, "answer")}`} />
               <Metric label="Within ½ mark" value={pct(agreement.within_half_mark)} />
               <Metric
                 label="Average change"
-                value={agreement.mean_abs_difference === null ? "—" : `${agreement.mean_abs_difference} marks`}
-                note={`${plural(agreement.overrides, "override")}`}
+                value={agreement.mean_abs_difference === null ? "—" : `${agreement.mean_abs_difference}`}
+                note={`marks · ${plural(agreement.overrides, "override")}`}
               />
               <Metric
                 label="Flags that were right"
@@ -166,18 +249,63 @@ export function ClassDashboard({ analytics, courseId }: { analytics: CourseAnaly
               />
             </dl>
           )}
-        </section>
+        </Card>
       </div>
+    </div>
+  );
+}
+
+function HeaderIcon({ icon: Icon }: { icon: typeof Users }) {
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-muted">
+      <Icon size={16} aria-hidden />
+    </span>
+  );
+}
+
+export function Avatar({ name }: { name: string }) {
+  const initials = name
+    .split(/\s+/)
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-3 text-[11px] font-semibold text-muted">
+      {initials}
+    </span>
+  );
+}
+
+function ComprehensionCell({ value, threshold }: { value: number | null; threshold: number }) {
+  if (value === null) {
+    return <span className="text-xs text-muted">No grades yet</span>;
+  }
+  const atRisk = value < threshold;
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-10 text-right font-semibold text-fg tabular-nums">{pct(value)}</span>
+      <span className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-[var(--viz-track)] sm:block" aria-hidden>
+        <span
+          className="block h-full rounded-full"
+          style={{ width: `${value * 100}%`, background: atRisk ? "var(--viz-critical)" : "var(--viz-series-1)" }}
+        />
+      </span>
+      {atRisk ? (
+        <Badge tone="danger" icon={AlertTriangle} size="sm">
+          At risk
+        </Badge>
+      ) : null}
     </div>
   );
 }
 
 function Metric({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
-    <div className="rounded-xl bg-slate-50 p-4">
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-1 text-xl font-semibold">{value}</dd>
-      {note ? <dd className="text-xs text-slate-400">{note}</dd> : null}
+    <div className="rounded-lg border border-line bg-surface-2 p-4">
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className="mt-1 font-display text-xl font-bold text-fg tabular-nums">{value}</dd>
+      {note ? <dd className="mt-0.5 text-xs text-muted">{note}</dd> : null}
     </div>
   );
 }
