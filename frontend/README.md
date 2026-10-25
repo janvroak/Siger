@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SIGER frontend
 
-## Getting Started
+The student and faculty portals: a Next.js 16 (App Router) app with
+React 19, Tailwind CSS v4, Recharts and lucide-react icons.
 
-First, run the development server:
+See the [root README](../README.md) to run the whole system and
+[docs/architecture.md](../docs/architecture.md#10-frontend) for the route map.
+
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000 (the API must be running on :8000)
+npm run lint
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`/api/backend/*` is forwarded to the FastAPI backend (`next.config.ts`).
+Set `BACKEND_API_URL` when the API runs somewhere other than
+`http://127.0.0.1:8000`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+app/                      pages (App Router); every page is a client component
+├── login/, register/
+├── dashboard/            student or faculty home, by role
+└── courses/[courseId]/
+    ├── chat/                                 lecture chatbot (students)
+    ├── analytics/                            class analytics / my progress
+    │   └── students/[studentId]/             one student's progress (faculty)
+    └── assignments/
+        ├── new/                              create assignment + answer key
+        └── [assignmentId]/
+            ├── edit/
+            └── submissions/[submissionId]/   faculty review screen
+components/
+├── ui/                   design system (see below)
+├── charts/               Recharts charts, each with a table view
+├── AppShell.tsx          sidebar, top bar, Ctrl+K search, theme toggle, user menu
+├── ClassDashboard.tsx    faculty analytics
+├── StudentDashboard.tsx  student progress
+├── QuestionResultCard.tsx, GradeView.tsx, SubmissionPanel.tsx, RosterPanel.tsx …
+lib/
+├── api.ts                the only module that calls the backend; all types
+├── auth.ts               JWT in localStorage
+├── useAuthedUser.ts      signed-in user + role redirect
+└── preferences.ts        theme and sidebar preferences
+```
 
-## Learn More
+## Conventions
 
-To learn more about Next.js, take a look at the following resources:
+- **Data:** call the backend only through functions in `lib/api.ts`. Pages
+  load with `useAuthedUser()` and pass the token to those functions.
+- **Styling:** use the design tokens, not raw Tailwind colours:
+  `bg-surface`, `bg-surface-2`, `border-line`, `text-fg`, `text-muted`,
+  `bg-accent`, `text-accent-text`, and `success` / `warning` / `danger` /
+  `info` (each with `-soft` and `-line`). They are defined in
+  `app/globals.css` for light and dark mode, so dark mode needs no extra
+  classes.
+- **Components:** reuse `components/ui`:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+  | Component | For |
+  |---|---|
+  | `Button`, `IconButton`, `buttonClass()` | actions; `buttonClass` styles links as buttons |
+  | `Field`, `inputClass`, `Select` | form fields with label, hint and error |
+  | `Card`, `CardHeader`, `Page`, `PageHeader`, `Section` | page structure |
+  | `Badge`, `Tag`, `PointChip` | statuses (always with an icon), topics, key points |
+  | `StatCard`, `ScoreRing`, `ScoreChip`, `ConfidenceMeter`, `ProgressBar` | numbers and scores |
+  | `StatusStepper` | submission progress |
+  | `DataTable` | tables with sticky header and sortable columns |
+  | `Tabs`, `Modal` (in `components/`), `Toast` (`useToast()`) | interaction |
+  | `Skeleton`, `PageSkeleton`, `EmptyState`, `ErrorState`, `Callout` | loading, empty and error states |
+  | `Dropzone` | drag-and-drop PDF upload |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Accessibility:** status is never colour alone (icon or text too), every
+  icon-only button has a label, and LLM or student text is always rendered as
+  plain text, never as HTML.
+- **Next.js version:** this is Next.js 16, which differs from older versions;
+  check `node_modules/next/dist/docs/` before using an unfamiliar API
+  (see `AGENTS.md`).

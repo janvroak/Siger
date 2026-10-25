@@ -1,7 +1,7 @@
 [project]
 name = "siger-backend"
 version = "0.1.0"
-description = "Backend foundation for the Siger multi-agent AI teaching assistant."
+description = "SIGER API: AI assessment against an answer key, faculty review, learning analytics and a lecture chatbot."
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.14.0",
